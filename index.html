@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FISHBALL 3vs3 - Smart Lobby</title>
+    <title>FISHBALL 3vs3 - Power Edition</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -28,7 +28,6 @@
         <div class="lobby-box">
             <h1 style="margin:0; color:#4CAF50; letter-spacing: 2px;">FISHBALL 3vs3</h1>
             <div id="status-text">Connessione in corso...</div>
-            
             <div class="team-settings" id="host-controls" style="display:none;">
                 <div class="team-box">
                     <div style="font-size: 0.8em; opacity: 0.7;">SQUADRA 1</div>
@@ -39,13 +38,11 @@
                     <div class="color-grid" id="picker-t2"></div>
                 </div>
             </div>
-
             <div class="player-status-grid">
                 <div id="slot0" class="p-slot">P1 (HOST)</div> <div id="slot1" class="p-slot">P2</div>
                 <div id="slot2" class="p-slot">P3</div> <div id="slot3" class="p-slot">P4</div>
                 <div id="slot4" class="p-slot">P5</div> <div id="slot5" class="p-slot">P6</div>
             </div>
-
             <button id="start-btn" onclick="startGame()">GIOCA ORA</button>
         </div>
     </div>
@@ -130,6 +127,8 @@ peer.on('open', id => {
 peer.on('connection', conn => {
     conn.on('open', () => {
         connections.push(conn);
+        const playerSlot = connections.length;
+        conn.send({ type: 'initSlot', slot: playerSlot });
         refreshLobbyState();
     });
     conn.on('close', () => {
@@ -147,24 +146,23 @@ peer.on('connection', conn => {
 function refreshLobbyState() {
     if(!isHost) return;
     activeCount = connections.length + 1;
-    // Pulisce tasti remoti non più esistenti
     const newRemoteKeys = {};
     connections.forEach((c, i) => { if(allRemoteKeys[i+1]) newRemoteKeys[i+1] = allRemoteKeys[i+1]; });
     allRemoteKeys = newRemoteKeys;
-    
     updateLobbySlots();
     sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors });
 }
 
 function setupGuest(conn) {
     conn.on('data', data => {
-        if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; mySlot = data.count; updateLobbySlots(); }
+        if (data.type === 'initSlot') { mySlot = data.slot; }
+        if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; updateLobbySlots(); }
         if (data.type === 'colorSync') teamColors = data.colors;
         if (data.type === 'start') { gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; }
         if (data.type === 'backToLobby') { gameStarted = false; document.getElementById('menu-overlay').style.display = "flex"; }
         if (data.type === 'sync') {
             ball.x = data.ball.x; ball.y = data.ball.y;
-            data.players.forEach((p, i) => { if(players[i]) { Object.assign(players[i], {x:p.x, y:p.y, kick:p.kick, boostEndTime:p.bet, boostReadyTime:p.brt}); } });
+            data.players.forEach((p, i) => { if(players[i]) Object.assign(players[i], {x:p.x, y:p.y, kick:p.kick, boostEndTime:p.bet, boostReadyTime:p.brt}); });
             score = data.score;
         }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; playSound(0.4); }
@@ -205,12 +203,13 @@ function resolve(c1, c2, isPost = false) {
 function checkLimits(o, isBall) {
     if (!o || o.x < -500) return;
     if (isBall) {
-        if (o.y - o.r < OFFSET_TOP + 15 || o.y + o.r > TOTAL_H - 15) { o.vy *= -0.75; o.y = o.y < MID_Y_GAME ? OFFSET_TOP + 15 + o.r : TOTAL_H - 15 - o.r; }
+        // RIMBALZO SPONDE: Ridotto del 10% (-0.75 -> -0.67)
+        if (o.y - o.r < OFFSET_TOP + 15 || o.y + o.r > TOTAL_H - 15) { o.vy *= -0.67; o.y = o.y < MID_Y_GAME ? OFFSET_TOP + 15 + o.r : TOTAL_H - 15 - o.r; }
         if (o.y > MID_Y_GAME - 65 && o.y < MID_Y_GAME + 65) {
             if (o.x - o.r < 15) { o.vx = 0; o.vy = 0; o.x = 15 + o.r; }
             if (o.x + o.r > W - 15) { o.vx = 0; o.vy = 0; o.x = W - 15 - o.r; }
         } else {
-            if (o.x - o.r < 45 || o.x + o.r > W - 45) { o.vx *= -0.75; o.x = o.x < MID_X ? 45 + o.r : W - 45 - o.r; }
+            if (o.x - o.r < 45 || o.x + o.r > W - 45) { o.vx *= -0.67; o.x = o.x < MID_X ? 45 + o.r : W - 45 - o.r; }
         }
     } else {
         if (o.y < OFFSET_TOP + 15) o.y = OFFSET_TOP + 15; 
@@ -224,24 +223,13 @@ function resetPos() {
     const now = Date.now(); isGoalProcessed = false;
     ball = { x: MID_X, y: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
     players.forEach(p => Object.assign(p, {x:-1000, y:-1000, vx:0, vy:0, boostEndTime:0, boostReadyTime:now}));
-    
     let fx = 185, mx = 100, gx = 30;
-
     if (activeCount === 1) { players[0].x = FIELD_MARGIN_X + fx; players[0].y = MID_Y_GAME; }
-    else if (activeCount === 2) { 
-        players[0].x = FIELD_MARGIN_X + fx; players[0].y = MID_Y_GAME; 
-        players[1].x = W - FIELD_MARGIN_X - fx; players[1].y = MID_Y_GAME; 
-    }
-    else if (activeCount === 3) { 
-        players[0].x = FIELD_MARGIN_X + mx; players[0].y = MID_Y_GAME - 100;
-        players[2].x = FIELD_MARGIN_X + mx; players[2].y = MID_Y_GAME + 100;
-        players[1].x = W - FIELD_MARGIN_X - fx; players[1].y = MID_Y_GAME;
-    }
+    else if (activeCount === 2) { players[0].x = FIELD_MARGIN_X + fx; players[0].y = MID_Y_GAME; players[1].x = W - FIELD_MARGIN_X - fx; players[1].y = MID_Y_GAME; }
+    else if (activeCount === 3) { players[0].x = FIELD_MARGIN_X + mx; players[0].y = MID_Y_GAME - 100; players[2].x = FIELD_MARGIN_X + mx; players[2].y = MID_Y_GAME + 100; players[1].x = W - FIELD_MARGIN_X - fx; players[1].y = MID_Y_GAME; }
     else {
-        players[0].x = FIELD_MARGIN_X + mx; players[0].y = MID_Y_GAME + 100;
-        players[1].x = W - FIELD_MARGIN_X - mx; players[1].y = MID_Y_GAME + 100;
-        players[2].x = FIELD_MARGIN_X + mx; players[2].y = MID_Y_GAME - 100;
-        players[3].x = W - FIELD_MARGIN_X - mx; players[3].y = MID_Y_GAME - 100;
+        players[0].x = FIELD_MARGIN_X + mx; players[0].y = MID_Y_GAME + 100; players[1].x = W - FIELD_MARGIN_X - mx; players[1].y = MID_Y_GAME + 100;
+        players[2].x = FIELD_MARGIN_X + mx; players[2].y = MID_Y_GAME - 100; players[3].x = W - FIELD_MARGIN_X - mx; players[3].y = MID_Y_GAME - 100;
         if (activeCount >= 5) { players[4].x = FIELD_MARGIN_X + gx; players[4].y = MID_Y_GAME; }
         if (activeCount >= 6) { players[5].x = W - FIELD_MARGIN_X - gx; players[5].y = MID_Y_GAME; }
     }
@@ -271,7 +259,10 @@ function movePlayer(p, input) {
     p.vx += input.ax * speed; p.vy += input.ay * speed; p.vx *= friction; p.vy *= friction; p.x += p.vx; p.y += p.vy;
     if (input.kick) {
         let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy);
-        if (d < p.r + ball.r + 8) { ball.vx = (dx/d)*3.8; ball.vy = (dy/d)*3.8; p.kick = 15; playSound(0.13); }
+        if (d < p.r + ball.r + 8) { 
+            // POTENZA TIRO: Aumentata del 15% (3.8 -> 4.37)
+            ball.vx = (dx/d)*4.37; ball.vy = (dy/d)*4.37; p.kick = 15; playSound(0.13); 
+        }
     }
     if (p.kick > 0) p.kick--;
 }
@@ -298,15 +289,8 @@ function gameLoop(t) {
 }
 
 window.addEventListener('keydown', e => { 
-    rawKeys[e.code] = true; 
-    if(audioCtx.state === 'suspended') audioCtx.resume(); 
-    if(e.code === 'Escape' && isHost && gameStarted) { 
-        gameStarted = false; 
-        refreshLobbyState(); // Ricalcola i presenti prima di mostrare la lobby
-        sendToAll({ type: 'backToLobby' }); 
-        document.getElementById('menu-overlay').style.display = "flex"; 
-        resetPos(); 
-    } 
+    rawKeys[e.code] = true; if(audioCtx.state === 'suspended') audioCtx.resume(); 
+    if(e.code === 'Escape' && isHost && gameStarted) { gameStarted = false; refreshLobbyState(); sendToAll({ type: 'backToLobby' }); document.getElementById('menu-overlay').style.display = "flex"; resetPos(); } 
 });
 window.addEventListener('keyup', e => rawKeys[e.code] = false);
 
@@ -316,24 +300,21 @@ function draw() {
     ctx.fillStyle = "#2e7d32"; ctx.fillRect(0, 0, W, TOTAL_H);
     if (bannerLoaded) { ctx.drawImage(topImage, 0, 0, W, OFFSET_TOP); }
     else { ctx.fillStyle = "#1a1a1a"; ctx.fillRect(0, 0, W, OFFSET_TOP); ctx.fillStyle = "#4CAF50"; ctx.font = "bold 40px sans-serif"; ctx.textAlign = "center"; ctx.fillText("FISHBALL 3vs3", W/2, OFFSET_TOP/2 + 15); }
-    
     const fieldWidth = W - (FIELD_MARGIN_X * 2), numStripes = 9, stripeW = fieldWidth / numStripes;
     for (let i = 0; i < numStripes; i++) { ctx.fillStyle = (i % 2 === 0) ? "#2e7d32" : "#388e3c"; ctx.fillRect(FIELD_MARGIN_X + (i * stripeW), OFFSET_TOP + 15, stripeW, H_GAME - 30); }
-
     ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 4;
     ctx.strokeRect(45, OFFSET_TOP+15, W-90, H_GAME-30); ctx.strokeRect(45, MID_Y_GAME-100, 80, 200); ctx.strokeRect(W-125, MID_Y_GAME-100, 80, 200);
     ctx.beginPath(); ctx.moveTo(MID_X, OFFSET_TOP+15); ctx.lineTo(MID_X, TOTAL_H-15); ctx.stroke();
     ctx.beginPath(); ctx.arc(MID_X, MID_Y_GAME, 70, 0, Math.PI*2); ctx.stroke();
     ctx.strokeStyle = "#FFF"; ctx.strokeRect(15, MID_Y_GAME-65, 30, 130); ctx.strokeRect(W-45, MID_Y_GAME-65, 30, 130);
     posts.forEach(p => { ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.stroke(); });
-
     for(let i=0; i<6; i++) {
         const p = players[i]; if (p.x < -500) continue;
         ctx.fillStyle = (i % 2 === 0) ? teamColors[0] : teamColors[1];
         ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
         ctx.strokeStyle = (now < p.boostEndTime) ? "#FFEB3B" : (p.kick > 0 ? "#FFF" : (now < p.boostReadyTime ? "#9E9E9E" : "#000"));
         ctx.lineWidth = 4; ctx.stroke();
-        if (i === mySlot) { ctx.fillStyle = "white"; ctx.beginPath(); ctx.moveTo(p.x, p.y-p.r-6); ctx.lineTo(p.x-4.7, p.y-p.r-11.3); ctx.lineTo(p.x+4.7, p.y-p.r-11.3); ctx.fill(); }
+        if (i === mySlot) { ctx.fillStyle = "white"; ctx.beginPath(); ctx.moveTo(p.x, p.y-p.r-6); ctx.lineTo(p.x-5, p.y-p.r-12); ctx.lineTo(p.x+5, p.y-p.r-12); ctx.fill(); }
     }
     ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
     if (goalMsg.timer > 0) { ctx.font = "bold 80px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "white"; ctx.strokeStyle="black"; ctx.lineWidth=8; ctx.strokeText(goalMsg.text, MID_X, MID_Y_GAME); ctx.fillText(goalMsg.text, MID_X, MID_Y_GAME); }
