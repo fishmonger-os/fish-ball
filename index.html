@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FISHBALL 3vs3 - Power Edition</title>
+    <title>FISHBALL 3vs3 - Verified Lobby</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -27,7 +27,7 @@
     <div id="menu-overlay">
         <div class="lobby-box">
             <h1 style="margin:0; color:#4CAF50; letter-spacing: 2px;">FISHBALL 3vs3</h1>
-            <div id="status-text">Connessione in corso...</div>
+            <div id="status-text">Generazione ID...</div>
             <div class="team-settings" id="host-controls" style="display:none;">
                 <div class="team-box">
                     <div style="font-size: 0.8em; opacity: 0.7;">SQUADRA 1</div>
@@ -51,6 +51,7 @@
     <canvas id="gameCanvas" width="956" height="654"></canvas>
 
 <script>
+// --- AUDIO & COSTANTI ---
 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 let lastSoundTime = 0;
 function playSound(vol = 0.12) {
@@ -90,32 +91,19 @@ const posts = [
 let topImage = new Image(); 
 let bannerLoaded = false;
 topImage.onload = () => { bannerLoaded = true; };
-topImage.onerror = () => { bannerLoaded = false; };
 topImage.src = 'banner.png';
 
+// --- RETE & LOBBY ---
 const peer = new Peer();
 let connections = [], isHost = false, gameStarted = false, activeCount = 1, lastSync = 0, mySlot = 0;
 
-function initColorPickers() {
-    if (!isHost) return;
-    document.getElementById('host-controls').style.display = 'flex';
-    [1, 2].forEach(tIdx => {
-        const container = document.getElementById('picker-t' + tIdx);
-        container.innerHTML = '';
-        PRESET_COLORS.forEach(color => {
-            const dot = document.createElement('div');
-            dot.className = 'color-dot' + (teamColors[tIdx-1] === color ? ' active' : '');
-            dot.style.backgroundColor = color;
-            dot.onclick = () => { teamColors[tIdx-1] = color; initColorPickers(); sendToAll({ type: 'colorSync', colors: teamColors }); };
-            container.appendChild(dot);
-        });
-    });
-}
-
 peer.on('open', id => {
     const joinId = new URLSearchParams(window.location.search).get('join');
-    if (joinId) { isHost = false; setupGuest(peer.connect(joinId, { reliable: false })); }
-    else {
+    if (joinId) { 
+        isHost = false; 
+        const conn = peer.connect(joinId, { reliable: true });
+        setupGuest(conn);
+    } else {
         isHost = true; mySlot = 0;
         document.getElementById('status-text').innerHTML = `Link Squadra:<br><input type="text" id="link-input" value="${window.location.origin + window.location.pathname}?join=${id}" readonly onclick="this.select(); document.execCommand('copy');">`;
         document.getElementById('slot0').classList.add('active');
@@ -124,36 +112,41 @@ peer.on('open', id => {
     }
 });
 
+// Gestione Host
 peer.on('connection', conn => {
-    conn.on('open', () => {
-        connections.push(conn);
-        const playerSlot = connections.length;
-        conn.send({ type: 'initSlot', slot: playerSlot });
-        refreshLobbyState();
-    });
-    conn.on('close', () => {
-        connections = connections.filter(c => c.peer !== conn.peer);
-        refreshLobbyState();
-    });
     conn.on('data', data => { 
+        // Solo quando il client invia 'join' lo aggiungiamo ufficialmente
+        if(data.type === 'join') {
+            if (!connections.find(c => c.peer === conn.peer)) {
+                connections.push(conn);
+                conn.send({ type: 'initSlot', slot: connections.length });
+                refreshLobbyState();
+            }
+        }
         if(data.type === 'input') {
             const idx = connections.indexOf(conn) + 1;
             allRemoteKeys[idx] = data.keys; 
         }
+    });
+    conn.on('close', () => {
+        connections = connections.filter(c => c.peer !== conn.peer);
+        refreshLobbyState();
     });
 });
 
 function refreshLobbyState() {
     if(!isHost) return;
     activeCount = connections.length + 1;
-    const newRemoteKeys = {};
-    connections.forEach((c, i) => { if(allRemoteKeys[i+1]) newRemoteKeys[i+1] = allRemoteKeys[i+1]; });
-    allRemoteKeys = newRemoteKeys;
     updateLobbySlots();
     sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors });
 }
 
+// Gestione Guest
 function setupGuest(conn) {
+    conn.on('open', () => {
+        conn.send({ type: 'join' }); // Handshake: "Ehi Host, sono qui davvero!"
+        document.getElementById('status-text').innerText = "In attesa dell'Host...";
+    });
     conn.on('data', data => {
         if (data.type === 'initSlot') { mySlot = data.slot; }
         if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; updateLobbySlots(); }
@@ -180,6 +173,23 @@ function updateLobbySlots() {
 
 function sendToAll(d) { connections.forEach(c => { if(c.open) c.send(d); }); }
 
+function initColorPickers() {
+    if (!isHost) return;
+    document.getElementById('host-controls').style.display = 'flex';
+    [1, 2].forEach(tIdx => {
+        const container = document.getElementById('picker-t' + tIdx);
+        container.innerHTML = '';
+        PRESET_COLORS.forEach(color => {
+            const dot = document.createElement('div');
+            dot.className = 'color-dot' + (teamColors[tIdx-1] === color ? ' active' : '');
+            dot.style.backgroundColor = color;
+            dot.onclick = () => { teamColors[tIdx-1] = color; initColorPickers(); sendToAll({ type: 'colorSync', colors: teamColors }); };
+            container.appendChild(dot);
+        });
+    });
+}
+
+// --- FISICA ---
 function startGame() { if(isHost){ score = [0, 0]; goalMsg.timer = 0; gameStarted = true; document.getElementById('menu-overlay').style.display="none"; resetPos(); sendToAll({type:'start'}); } }
 
 function resolve(c1, c2, isPost = false) {
@@ -203,7 +213,6 @@ function resolve(c1, c2, isPost = false) {
 function checkLimits(o, isBall) {
     if (!o || o.x < -500) return;
     if (isBall) {
-        // RIMBALZO SPONDE: Ridotto del 10% (-0.75 -> -0.67)
         if (o.y - o.r < OFFSET_TOP + 15 || o.y + o.r > TOTAL_H - 15) { o.vy *= -0.67; o.y = o.y < MID_Y_GAME ? OFFSET_TOP + 15 + o.r : TOTAL_H - 15 - o.r; }
         if (o.y > MID_Y_GAME - 65 && o.y < MID_Y_GAME + 65) {
             if (o.x - o.r < 15) { o.vx = 0; o.vy = 0; o.x = 15 + o.r; }
@@ -212,10 +221,8 @@ function checkLimits(o, isBall) {
             if (o.x - o.r < 45 || o.x + o.r > W - 45) { o.vx *= -0.67; o.x = o.x < MID_X ? 45 + o.r : W - 45 - o.r; }
         }
     } else {
-        if (o.y < OFFSET_TOP + 15) o.y = OFFSET_TOP + 15; 
-        if (o.y > TOTAL_H - 15) o.y = TOTAL_H - 15;
-        if (o.x < 45) o.x = 45; 
-        if (o.x > W - 45) o.x = W - 45;
+        if (o.y < OFFSET_TOP + 15) o.y = OFFSET_TOP + 15; if (o.y > TOTAL_H - 15) o.y = TOTAL_H - 15;
+        if (o.x < 45) o.x = 45; if (o.x > W - 45) o.x = W - 45;
     }
 }
 
@@ -259,10 +266,7 @@ function movePlayer(p, input) {
     p.vx += input.ax * speed; p.vy += input.ay * speed; p.vx *= friction; p.vy *= friction; p.x += p.vx; p.y += p.vy;
     if (input.kick) {
         let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy);
-        if (d < p.r + ball.r + 8) { 
-            // POTENZA TIRO: Aumentata del 15% (3.8 -> 4.37)
-            ball.vx = (dx/d)*4.37; ball.vy = (dy/d)*4.37; p.kick = 15; playSound(0.13); 
-        }
+        if (d < p.r + ball.r + 8) { ball.vx = (dx/d)*4.37; ball.vy = (dy/d)*4.37; p.kick = 15; playSound(0.13); }
     }
     if (p.kick > 0) p.kick--;
 }
@@ -288,12 +292,14 @@ function gameLoop(t) {
     draw(); requestAnimationFrame(gameLoop);
 }
 
+// --- CONTROLLI ---
 window.addEventListener('keydown', e => { 
     rawKeys[e.code] = true; if(audioCtx.state === 'suspended') audioCtx.resume(); 
     if(e.code === 'Escape' && isHost && gameStarted) { gameStarted = false; refreshLobbyState(); sendToAll({ type: 'backToLobby' }); document.getElementById('menu-overlay').style.display = "flex"; resetPos(); } 
 });
 window.addEventListener('keyup', e => rawKeys[e.code] = false);
 
+// --- RENDERING ---
 function draw() {
     const ctx = document.getElementById('gameCanvas').getContext('2d');
     const now = Date.now();
