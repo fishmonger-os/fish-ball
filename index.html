@@ -3,15 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>FISHBALL 3vs3 - Goal Box Fixed</title>
+    <title>FISHBALL 3vs3 - Final Version</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-        body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; position: fixed; width: 100%; touch-action: none; }
-        #game-container { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; }
-        canvas { border: 5px solid #222; background-color: #2e7d32; max-width: 100vw; max-height: 100vh; object-fit: contain; }
+        body { 
+            background: #111; 
+            display: flex; 
+            flex-direction: column; 
+            align-items: center; 
+            justify-content: center; 
+            height: 100vh; 
+            height: 100dvh; 
+            margin: 0; 
+            color: white; 
+            font-family: sans-serif; 
+            overflow: hidden; 
+            width: 100%; 
+            touch-action: none; 
+        }
+        #game-container { position: relative; width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; padding: 5px; }
+        canvas { border: 5px solid #222; background-color: #2e7d32; max-width: 100%; max-height: 100%; object-fit: contain; }
         #menu-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(5px); }
-        .lobby-box { background: #222; padding: 20px; border-radius: 20px; border: 1px solid #444; text-align: center; width: 95%; max-width: 800px; max-height: 90vh; overflow-y: auto; }
+        .lobby-box { background: #222; padding: 20px; border-radius: 20px; border: 1px solid #444; text-align: center; width: 95%; max-width: 800px; max-height: 95vh; overflow-y: auto; }
         .team-settings { display: flex; gap: 15px; margin-top: 15px; }
         .team-box { background: #333; padding: 15px; border-radius: 12px; flex: 1; border: 1px solid #444; }
         .color-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(18px, 1fr)); gap: 3px; margin: 8px 0; }
@@ -159,31 +173,23 @@ function resolve(c1, c2, post=false) {
 
 function checkLimits(o, isBall) {
     if(!o || o.x < -500) return;
-    const bounce = 0.576; // Coefficiente -4% (0.6 * 0.96)
-
+    const bounce = 0.576; // Riduzione 4%
     if (isBall) {
-        // Rimbalzo bordi orizzontali prato
         if(o.y - o.r < OFFSET_TOP + 15) { o.vy *= -bounce; o.y = OFFSET_TOP + 15 + o.r; }
         if(o.y + o.r > TOTAL_H - 15) { o.vy *= -bounce; o.y = TOTAL_H - 15 - o.r; }
-        
         const inGoalRangeY = (o.y > MID_Y_GAME - 65 && o.y < MID_Y_GAME + 65);
         if (inGoalRangeY) {
-            // Rimbalzo FONDO porta (15px dal bordo canvas)
             if (o.x < 15 + o.r) { o.vx *= -bounce; o.x = 15 + o.r; }
             if (o.x > W - 15 - o.r) { o.vx *= -bounce; o.x = W - 15 - o.r; }
-            
-            // Rimbalzo LATI LUNGHI porta (sopra e sotto nel box)
             if (o.x < 45 || o.x > W - 45) {
                 if (o.y - o.r < MID_Y_GAME - 65) { o.vy *= -bounce; o.y = MID_Y_GAME - 65 + o.r; }
                 if (o.y + o.r > MID_Y_GAME + 65) { o.vy *= -bounce; o.y = MID_Y_GAME + 65 - o.r; }
             }
         } else {
-            // Rimbalzo su linea di fondo campo (fuori dalla porta)
             if (o.x - o.r < 45) { o.vx *= -bounce; o.x = 45 + o.r; }
             if (o.x + o.r > W - 45) { o.vx *= -bounce; o.x = W - 45 - o.r; }
         }
     } else {
-        // Giocatore (rimane in campo 45 -> W-45)
         if(o.y < OFFSET_TOP + 15) { o.vy *= -bounce; o.y = OFFSET_TOP + 15; }
         if(o.y > TOTAL_H - 15) { o.vy *= -bounce; o.y = TOTAL_H - 15; }
         if (o.x < 45) { o.vx *= -bounce; o.x = 45; }
@@ -213,14 +219,14 @@ function gameLoop(t) {
             players.forEach((p,i)=>{
                 if(i>=activeCount)return;
                 const now=Date.now(); 
-                let s=0.155, f=0.9; // Velocità ridotta -4%
+                let s=0.155, f=0.9; // Velocità -4%
                 if(ins[i].boost && now>=p.boostReadyTime){p.boostEndTime=now+200;p.boostReadyTime=now+10000;playSound(0.15);}
-                if(now<p.boostEndTime){s=0.388;f=0.86;} // Boost ridotto -4%
+                if(now<p.boostEndTime){s=0.388;f=0.86;} // Boost -4%
                 p.vx+=ins[i].ax*s; p.vy+=ins[i].ay*s; p.vx*=f; p.vy*=f;
                 p.x+=p.vx; p.y+=p.vy;
                 if(ins[i].kick) { 
                     let dx=ball.x-p.x, dy=ball.y-p.y, d=Math.sqrt(dx*dx+dy*dy); 
-                    if(d<p.r+ball.r+8){ball.vx=(dx/d)*4.32; ball.vy=(dy/d)*4.32; p.kick=15; playSound(0.13);} // Calcio -4%
+                    if(d<p.r+ball.r+8){ball.vx=(dx/d)*4.32; ball.vy=(dy/d)*4.32; p.kick=15; playSound(0.13);} // Tiro -4%
                 }
                 if(p.kick>0)p.kick--; checkLimits(p,false); resolve(p,ball); posts.forEach(post=>resolve(post,p,true));
             });
@@ -274,8 +280,9 @@ function draw() {
     document.getElementById('live-score').innerText=`${score[0]} - ${score[1]}`;
 }
 
-window.addEventListener('keydown', e=>{ rawKeys[e.code]=true; if(e.code==='Escape'&&isHost){ gameStarted=false; document.getElementById('menu-overlay').style.display='flex'; } if(e.code==='KeyF') toggleFullScreen(); });
+window.addEventListener('keydown', e=>{ rawKeys[e.code]=true; if(e.code==='Escape'&&isHost){ gameStarted=false; document.getElementById('menu-overlay').style.display='flex'; } });
 window.addEventListener('keyup', e=>rawKeys[e.code]=false);
+window.addEventListener('resize', () => { window.scrollTo(0, 0); });
 </script>
 </body>
 </html>
