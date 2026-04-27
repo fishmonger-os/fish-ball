@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>FISHBALL 3vs3 - Boundary & Style Fixed</title>
+    <title>FISHBALL 3vs3 - Goal Box Fixed</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -153,30 +153,41 @@ function resolve(c1, c2, post=false) {
         if(post) { c2.x+=nx*ov; c2.y+=ny*ov; }
         else { c1.x-=nx*ov*0.5; c1.y-=ny*ov*0.5; c2.x+=nx*ov*0.5; c2.y+=ny*ov*0.5; }
         let dot=(c2.vx-(post?0:c1.vx))*nx+(c2.vy-(post?0:c1.vy))*ny;
-        if(dot<0) { let b = post ? 0.414 : 0.855; let imp = -(1 + b) * dot / (1 / (post ? 100 : c1.m) + 1 / c2.m); c2.vx += (imp * nx) / c2.m; c2.vy += (imp * ny) / c2.m; if(!post){ c1.vx -= (imp * nx) / c1.m; c1.vy -= (imp * ny) / c1.m; } }
+        if(dot<0) { let b = post ? 0.397 : 0.820; let imp = -(1 + b) * dot / (1 / (post ? 100 : c1.m) + 1 / c2.m); c2.vx += (imp * nx) / c2.m; c2.vy += (imp * ny) / c2.m; if(!post){ c1.vx -= (imp * nx) / c1.m; c1.vy -= (imp * ny) / c1.m; } }
     }
 }
 
 function checkLimits(o, isBall) {
     if(!o || o.x < -500) return;
+    const bounce = 0.576; // Coefficiente -4% (0.6 * 0.96)
+
     if (isBall) {
-        // Palla rimbalza sui bordi esterni del prato
-        if(o.y - o.r < OFFSET_TOP + 15) { o.vy *= -0.6; o.y = OFFSET_TOP + 15 + o.r; }
-        if(o.y + o.r > TOTAL_H - 15) { o.vy *= -0.6; o.y = TOTAL_H - 15 - o.r; }
-        const inGoalArea = (o.y > MID_Y_GAME - 65 && o.y < MID_Y_GAME + 65);
-        if (inGoalArea) {
-            if (o.x < 15 + o.r) { o.vx = 0; o.x = 15 + o.r; }
-            if (o.x > W - 15 - o.r) { o.vx = 0; o.x = W - 15 - o.r; }
+        // Rimbalzo bordi orizzontali prato
+        if(o.y - o.r < OFFSET_TOP + 15) { o.vy *= -bounce; o.y = OFFSET_TOP + 15 + o.r; }
+        if(o.y + o.r > TOTAL_H - 15) { o.vy *= -bounce; o.y = TOTAL_H - 15 - o.r; }
+        
+        const inGoalRangeY = (o.y > MID_Y_GAME - 65 && o.y < MID_Y_GAME + 65);
+        if (inGoalRangeY) {
+            // Rimbalzo FONDO porta (15px dal bordo canvas)
+            if (o.x < 15 + o.r) { o.vx *= -bounce; o.x = 15 + o.r; }
+            if (o.x > W - 15 - o.r) { o.vx *= -bounce; o.x = W - 15 - o.r; }
+            
+            // Rimbalzo LATI LUNGHI porta (sopra e sotto nel box)
+            if (o.x < 45 || o.x > W - 45) {
+                if (o.y - o.r < MID_Y_GAME - 65) { o.vy *= -bounce; o.y = MID_Y_GAME - 65 + o.r; }
+                if (o.y + o.r > MID_Y_GAME + 65) { o.vy *= -bounce; o.y = MID_Y_GAME + 65 - o.r; }
+            }
         } else {
-            if (o.x - o.r < 45) { o.vx *= -0.6; o.x = 45 + o.r; }
-            if (o.x + o.r > W - 45) { o.vx *= -0.6; o.x = W - 45 - o.r; }
+            // Rimbalzo su linea di fondo campo (fuori dalla porta)
+            if (o.x - o.r < 45) { o.vx *= -bounce; o.x = 45 + o.r; }
+            if (o.x + o.r > W - 45) { o.vx *= -bounce; o.x = W - 45 - o.r; }
         }
     } else {
-        // Giocatore supera con metà corpo (centro sulla linea)
-        if(o.y < OFFSET_TOP + 15) { o.vy *= -0.6; o.y = OFFSET_TOP + 15; }
-        if(o.y > TOTAL_H - 15) { o.vy *= -0.6; o.y = TOTAL_H - 15; }
-        if (o.x < 45) { o.vx *= -0.6; o.x = 45; }
-        if (o.x > W - 45) { o.vx *= -0.6; o.x = W - 45; }
+        // Giocatore (rimane in campo 45 -> W-45)
+        if(o.y < OFFSET_TOP + 15) { o.vy *= -bounce; o.y = OFFSET_TOP + 15; }
+        if(o.y > TOTAL_H - 15) { o.vy *= -bounce; o.y = TOTAL_H - 15; }
+        if (o.x < 45) { o.vx *= -bounce; o.x = 45; }
+        if (o.x > W - 45) { o.vx *= -bounce; o.x = W - 45; }
     }
 }
 
@@ -201,12 +212,16 @@ function gameLoop(t) {
             for(let i=0;i<activeCount;i++) { for(let j=i+1;j<activeCount;j++) resolve(players[i],players[j]); }
             players.forEach((p,i)=>{
                 if(i>=activeCount)return;
-                const now=Date.now(); let s=0.162, f=0.9;
+                const now=Date.now(); 
+                let s=0.155, f=0.9; // Velocità ridotta -4%
                 if(ins[i].boost && now>=p.boostReadyTime){p.boostEndTime=now+200;p.boostReadyTime=now+10000;playSound(0.15);}
-                if(now<p.boostEndTime){s=0.405;f=0.86;}
+                if(now<p.boostEndTime){s=0.388;f=0.86;} // Boost ridotto -4%
                 p.vx+=ins[i].ax*s; p.vy+=ins[i].ay*s; p.vx*=f; p.vy*=f;
                 p.x+=p.vx; p.y+=p.vy;
-                if(ins[i].kick) { let dx=ball.x-p.x, dy=ball.y-p.y, d=Math.sqrt(dx*dx+dy*dy); if(d<p.r+ball.r+8){ball.vx=(dx/d)*4.5; ball.vy=(dy/d)*4.5; p.kick=15; playSound(0.13);} }
+                if(ins[i].kick) { 
+                    let dx=ball.x-p.x, dy=ball.y-p.y, d=Math.sqrt(dx*dx+dy*dy); 
+                    if(d<p.r+ball.r+8){ball.vx=(dx/d)*4.32; ball.vy=(dy/d)*4.32; p.kick=15; playSound(0.13);} // Calcio -4%
+                }
                 if(p.kick>0)p.kick--; checkLimits(p,false); resolve(p,ball); posts.forEach(post=>resolve(post,p,true));
             });
             ball.x+=ball.vx; ball.y+=ball.vy; ball.vx*=0.99; ball.vy*=0.99;
@@ -246,11 +261,10 @@ function draw() {
         else if (s.pattern === 'h-stripes') { for (let y = -p.r; y < p.r; y += p.r/2) { ctx.fillRect(-p.r, y, p.r * 2, p.r/4); } }
         ctx.restore();
         ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-        // LOGICA BORDI DINAMICI
         let bc = "black"; 
-        if(now < p.boostEndTime) bc = "#FFEB3B"; // Giallo Boost
-        else if(p.kick > 0) bc = "white";         // Bianco Calcio
-        else if(now < p.boostReadyTime) bc = "#444"; // Grigio Ricarica
+        if(now < p.boostEndTime) bc = "#FFEB3B"; 
+        else if(p.kick > 0) bc = "white";         
+        else if(now < p.boostReadyTime) bc = "#444"; 
         ctx.strokeStyle = bc; ctx.lineWidth = 4; ctx.stroke();
         ctx.fillStyle = s.cNum; ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(p.number, p.x, p.y + 1);
     });
