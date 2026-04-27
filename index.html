@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>FISHBALL 3vs3 - Final Version</title>
+    <title>FISHBALL 3vs3 - Fixed Sync</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -103,7 +103,7 @@ let playerNumbers = [10, 7, 1, 9, 21, 99];
 let players = Array.from({length: 6}, (_, i) => ({ x: -1000, y: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, boostEndTime: 0, boostReadyTime: 0, number: playerNumbers[i] }));
 let ball = { x: MID_X, y: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
 let score = [0, 0], goalMsg = { text: "", timer: 0 }, isGoalProcessed = false;
-let connections = [], isHost = false, gameStarted = false, activeCount = 1, lastSync = 0;
+let connections = [], isHost = false, gameStarted = false, activeCount = 1, lastSync = 0, serverTimeOffset = 0;
 let rawKeys = {}, allRemoteKeys = {};
 const posts = [{x:45, y:MID_Y_GAME-65, r:5.6}, {x:45, y:MID_Y_GAME+65, r:5.6}, {x:W-45, y:MID_Y_GAME-65, r:5.6}, {x:W-45, y:MID_Y_GAME+65, r:5.6}];
 
@@ -142,6 +142,7 @@ function setupGuest(conn) {
         if(data.type==='start'){ gameStarted=true; document.getElementById('menu-overlay').style.display='none'; }
         if(data.type==='sync'){ 
             ball=data.ball; score=data.score; goalMsg=data.goalMsg; activeCount=data.count; 
+            serverTimeOffset = Date.now() - data.t; // Calcola sfasamento temporale per i bordi
             data.players.forEach((p,i)=>Object.assign(players[i],p)); 
         }
     });
@@ -160,13 +161,7 @@ function getInputs() {
     let ax=0, ay=0; const gps=navigator.getGamepads(); const gp=gps[0]||gps[1];
     if(gp){ if(Math.abs(gp.axes[0])>0.15)ax=gp.axes[0]; if(Math.abs(gp.axes[1])>0.15)ay=gp.axes[1]; }
     if(ax===0 && ay===0){ if(rawKeys['ArrowLeft']||rawKeys['KeyA'])ax--; if(rawKeys['ArrowRight']||rawKeys['KeyD'])ax++; if(rawKeys['ArrowUp']||rawKeys['KeyW'])ay--; if(rawKeys['ArrowDown']||rawKeys['KeyS'])ay++; const m=Math.sqrt(ax*ax+ay*ay); if(m>0){ax/=m; ay/=m;} }
-    // Ottimizzato riconoscimento tasti Shift e Spazio per guest
-    return { 
-        ax, 
-        ay, 
-        kick: (gp && (gp.buttons[0].pressed||gp.buttons[2].pressed)) || !!rawKeys['Space'], 
-        boost: (gp && (gp.buttons[5].pressed||gp.buttons[7].pressed)) || !!rawKeys['ShiftLeft'] || !!rawKeys['ShiftRight']
-    };
+    return { ax, ay, kick: (gp && (gp.buttons[0].pressed||gp.buttons[2].pressed))||rawKeys['Space'], boost: (gp && (gp.buttons[5].pressed||gp.buttons[7].pressed))||rawKeys['ShiftLeft']||rawKeys['ShiftRight'] };
 }
 
 function resolve(c1, c2, post=false) {
@@ -246,13 +241,33 @@ function gameLoop(t) {
             }
             checkLimits(ball,true); posts.forEach(post=>resolve(post,ball,true));
         }
-        if(t-lastSync>25){sendToAll({type:'sync',ball,players,score,goalMsg,count:activeCount}); lastSync=t;}
+        if(t-lastSync>25){
+            // Invio tutti i dati necessari per i bordi ai guest
+            sendToAll({
+                type:'sync',
+                ball,
+                players: players.map(p => ({ 
+                    x:p.x, y:p.y, vx:p.vx, vy:p.vy, 
+                    kick:p.kick, boostEndTime:p.boostEndTime, boostReadyTime:p.boostReadyTime, 
+                    number:p.number 
+                })),
+                score,
+                goalMsg,
+                count:activeCount,
+                t: Date.now()
+            }); 
+            lastSync=t;
+        }
     }
     if(goalMsg.timer>0)goalMsg.timer--; draw(); requestAnimationFrame(gameLoop);
 }
 
 function draw() {
-    const ctx = document.getElementById('gameCanvas').getContext('2d'); const now = Date.now();
+    const canvas = document.getElementById('gameCanvas');
+    if(!canvas) return;
+    const ctx = canvas.getContext('2d'); 
+    const now = isHost ? Date.now() : Date.now() - serverTimeOffset;
+    
     ctx.clearRect(0,0,W,TOTAL_H);
     const numStripes = 9; const stripeW = W / numStripes;
     for(let i=0; i<numStripes; i++) { ctx.fillStyle = (i % 2 === 0) ? "#2e7d32" : "#388e3c"; ctx.fillRect(i * stripeW, OFFSET_TOP, stripeW, H_GAME); }
@@ -275,16 +290,17 @@ function draw() {
         if (s.pattern === 'v-stripes') { for (let x = -p.r; x < p.r; x += p.r/2) { ctx.fillRect(x, -p.r, p.r/4, p.r * 2); } }
         else if (s.pattern === 'h-stripes') { for (let y = -p.r; y < p.r; y += p.r/2) { ctx.fillRect(-p.r, y, p.r * 2, p.r/4); } }
         ctx.restore();
+        
         ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         let bc = "black"; 
-        if(now < p.boostEndTime) bc = "#FFEB3B"; 
-        else if(p.kick > 0) bc = "white";          
-        else if(now < p.boostReadyTime) bc = "#444"; 
+        if(now < p.boostEndTime) bc = "#FFEB3B"; // Boost attivo: Giallo
+        else if(p.kick > 0) bc = "white";       // Tiro: Bianco   
+        else if(now < p.boostReadyTime) bc = "#444"; // Cooldown: Grigio
+        
         ctx.strokeStyle = bc; ctx.lineWidth = 4; ctx.stroke();
         ctx.fillStyle = s.cNum; ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(p.number, p.x, p.y + 1);
     });
 
-    // Disegno palla con bordino nero
     ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
     ctx.fillStyle="white"; ctx.fill();
     ctx.strokeStyle="black"; ctx.lineWidth=1.5; ctx.stroke();
