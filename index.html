@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>FISHBALL 3vs3 - Pitch & Physics Fixed</title>
+    <title>FISHBALL 3vs3 - Gamepad & Symmetry</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -147,11 +147,30 @@ peer.on('connection', conn => {
 });
 
 function getInputs() {
-    let ax=0, ay=0;
-    if(rawKeys['ArrowLeft']||rawKeys['KeyA'])ax--; if(rawKeys['ArrowRight']||rawKeys['KeyD'])ax++;
-    if(rawKeys['ArrowUp']||rawKeys['KeyW'])ay--; if(rawKeys['ArrowDown']||rawKeys['KeyS'])ay++;
-    const m=Math.sqrt(ax*ax+ay*ay); if(m>0){ax/=m; ay/=m;}
-    return { ax, ay, kick: rawKeys['Space'], boost: rawKeys['ShiftLeft']||rawKeys['ShiftRight'] };
+    let ax=0, ay=0, kick=rawKeys['Space'], boost=rawKeys['ShiftLeft']||rawKeys['ShiftRight'];
+    
+    // Supporto Joypad (PC e Mobile via Bluetooth)
+    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
+    for (let gp of gamepads) {
+        if (gp) {
+            // Analogico sinistro (360 gradi)
+            if (Math.abs(gp.axes[0]) > 0.1) ax = gp.axes[0];
+            if (Math.abs(gp.axes[1]) > 0.1) ay = gp.axes[1];
+            // Pulsante tiro (Solitamente pulsante sud/A/X)
+            if (gp.buttons[0].pressed) kick = true;
+            // Pulsante boost (Solitamente dorsale destro R1 o grilletto R2 o pulsante est/B/O)
+            if (gp.buttons[1].pressed || gp.buttons[5].pressed || gp.buttons[7].pressed) boost = true;
+        }
+    }
+
+    // Supporto tastiera (se joypad non usato)
+    if (ax === 0 && ay === 0) {
+        if(rawKeys['ArrowLeft']||rawKeys['KeyA'])ax--; if(rawKeys['ArrowRight']||rawKeys['KeyD'])ax++;
+        if(rawKeys['ArrowUp']||rawKeys['KeyW'])ay--; if(rawKeys['ArrowDown']||rawKeys['KeyS'])ay++;
+        const m=Math.sqrt(ax*ax+ay*ay); if(m>0){ax/=m; ay/=m;}
+    }
+    
+    return { ax, ay, kick, boost };
 }
 
 function resolve(c1, c2, post=false) {
@@ -172,37 +191,52 @@ function resolve(c1, c2, post=false) {
 
 function checkLimits(o, isBall) {
     const bounce = 0.547;
-    // Bordi orizzontali
     if(o.y - o.r < OFFSET_TOP + 15) { o.vy *= -bounce; o.y = OFFSET_TOP + 15 + o.r; }
     if(o.y + o.r > TOTAL_H - 15) { o.vy *= -bounce; o.y = TOTAL_H - 15 - o.r; }
-    
-    // Bordi verticali (Fondo campo)
     if(o.x - o.r < 45 || o.x + o.r > W - 45) {
-        // Se non è dentro la luce della porta
         if (!(o.y > MID_Y_GAME - 65 && o.y < MID_Y_GAME + 65)) {
             if (o.x - o.r < 45) { o.vx *= -bounce; o.x = 45 + o.r; }
             if (o.x + o.r > W - 45) { o.vx *= -bounce; o.x = W - 45 - o.r; }
         } else if (isBall) {
-            // Logica Goal (solo per la palla)
             if(!isGoalProcessed) {
                 if(o.x < 25) { score[1]++; goalMsg={text:"GOAL!",timer:120}; isGoalProcessed=true; setTimeout(resetPos,1500); }
                 else if(o.x > W - 25) { score[0]++; goalMsg={text:"GOAL!",timer:120}; isGoalProcessed=true; setTimeout(resetPos,1500); }
             }
         } else {
-            // I giocatori non entrano nelle porte
-            if (o.x < 45) o.x = 45;
-            if (o.x > W - 45) o.x = W - 45;
+            if (o.x < 45) o.x = 45; if (o.x > W - 45) o.x = W - 45;
         }
     }
 }
 
 function resetPos() {
     isGoalProcessed=false; ball={x:MID_X, y:MID_Y_GAME, vx:0, vy:0, r:10, m:1};
-    players.forEach((p,i)=>{
-        p.vx=0; p.vy=0; p.kick=0; p.boostEndTime=0; p.boostReadyTime=Date.now();
-        if(i>=activeCount){p.x=-1000; return;}
-        p.x = (i%2===0) ? 220 : W - 220; p.y = MID_Y_GAME + (Math.floor(i/2)-1) * 120;
-    });
+    
+    // Posizionamento Simmetrico dinamico
+    const team1 = [];
+    const team2 = [];
+    for(let i=0; i<activeCount; i++) {
+        if(i % 2 === 0) team1.push(i);
+        else team2.push(i);
+    }
+
+    const distribute = (indices, sideX) => {
+        const count = indices.length;
+        indices.forEach((pIdx, posInTeam) => {
+            players[pIdx].vx = 0; players[pIdx].vy = 0;
+            players[pIdx].kick = 0; players[pIdx].boostEndTime = 0;
+            players[pIdx].boostReadyTime = Date.now();
+            players[pIdx].x = sideX;
+            // Calcolo Y simmetrica: centra i giocatori verticalmente
+            const spacing = H_GAME / (count + 1);
+            players[pIdx].y = OFFSET_TOP + 15 + spacing * (posInTeam + 1);
+        });
+    };
+
+    distribute(team1, 220);
+    distribute(team2, W - 220);
+
+    // Nascondi giocatori non attivi
+    for(let i=activeCount; i<6; i++) { players[i].x = -1000; }
 }
 
 function startGame() { if(isHost){ gameStarted=true; document.getElementById('menu-overlay').style.display='none'; sendToAll({type:'start'}); resetPos(); } }
@@ -241,30 +275,18 @@ function gameLoop(t) {
 function draw() {
     const ctx = document.getElementById('gameCanvas').getContext('2d');
     const now = Date.now(); ctx.clearRect(0,0,W,TOTAL_H);
-    
-    // Campo a strisce
     for(let i=0; i<9; i++) { ctx.fillStyle=(i%2===0)?"#2e7d32":"#388e3c"; ctx.fillRect(i*(W/9), OFFSET_TOP, W/9, H_GAME); }
     if(bannerOK) ctx.drawImage(topImg, 0, 0, W, OFFSET_TOP);
-    
-    // LINEE DI GIOCO
     ctx.strokeStyle="rgba(255,255,255,0.6)"; ctx.lineWidth=3;
-    ctx.strokeRect(45, OFFSET_TOP+15, W-90, H_GAME-30); // Perimetro
-    ctx.beginPath(); ctx.moveTo(MID_X, OFFSET_TOP+15); ctx.lineTo(MID_X, TOTAL_H-15); ctx.stroke(); // Metà
-    ctx.beginPath(); ctx.arc(MID_X, MID_Y_GAME, 70, 0, Math.PI*2); ctx.stroke(); // Cerchio
-    
-    // AREE DI RIGORE
-    ctx.strokeRect(45, MID_Y_GAME-130, 100, 260); // Area sinistra
-    ctx.strokeRect(W-145, MID_Y_GAME-130, 100, 260); // Area destra
-    
-    // BOX PORTE
+    ctx.strokeRect(45, OFFSET_TOP+15, W-90, H_GAME-30);
+    ctx.beginPath(); ctx.moveTo(MID_X, OFFSET_TOP+15); ctx.lineTo(MID_X, TOTAL_H-15); ctx.stroke();
+    ctx.beginPath(); ctx.arc(MID_X, MID_Y_GAME, 70, 0, Math.PI*2); ctx.stroke();
+    ctx.strokeRect(45, MID_Y_GAME-130, 100, 260);
+    ctx.strokeRect(W-145, MID_Y_GAME-130, 100, 260);
     ctx.fillStyle="rgba(0,0,0,0.3)";
     ctx.fillRect(10, MID_Y_GAME-65, 35, 130); ctx.fillRect(W-45, MID_Y_GAME-65, 35, 130);
     ctx.strokeRect(10, MID_Y_GAME-65, 35, 130); ctx.strokeRect(W-45, MID_Y_GAME-65, 35, 130);
-
-    // Pali
     posts.forEach(p=>{ ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,Math.PI*2); ctx.fill(); ctx.stroke(); });
-
-    // Giocatori
     players.forEach((p,i) => {
         if(i>=activeCount || p.x<-500) return;
         const s = teamStyles[i%2===0?0:1];
@@ -275,20 +297,15 @@ function draw() {
         if(s.pattern==='v-stripes'){ for(let x=-p.r;x<p.r;x+=p.r/2) ctx.fillRect(x,-p.r,p.r/4,p.r*2); }
         else if(s.pattern==='h-stripes'){ for(let y=-p.r;y<p.r;y+=p.r/2) ctx.fillRect(-p.r,y,p.r*2,p.r/4); }
         ctx.restore();
-        
         let bc = "black";
         if(now < p.boostEndTime) bc = "#FFEB3B";
         else if(p.kick > 0) bc = "white";
         else if(now < p.boostReadyTime) bc = "#444";
-        
         ctx.strokeStyle = bc; ctx.lineWidth = 4; ctx.stroke();
         ctx.fillStyle = s.cNum; ctx.font = "bold 16px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle"; ctx.fillText(p.number, p.x, p.y);
     });
-
-    // Palla
     ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
     ctx.fillStyle="white"; ctx.fill(); ctx.strokeStyle="black"; ctx.lineWidth=2; ctx.stroke();
-    
     document.getElementById('live-score').innerText=`${score[0]} - ${score[1]}`;
     if(goalMsg.timer>0){ ctx.fillStyle="white"; ctx.font="bold 80px sans-serif"; ctx.textAlign="center"; ctx.fillText(goalMsg.text, MID_X, MID_Y_GAME); }
 }
