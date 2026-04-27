@@ -140,7 +140,10 @@ function setupGuest(conn) {
     conn.on('data', data => {
         if(data.type==='lobby'){ teamStyles=data.styles; playerNumbers=data.nums; activeCount=data.count; buildPlayerGrid(); renderPickers(); }
         if(data.type==='start'){ gameStarted=true; document.getElementById('menu-overlay').style.display='none'; }
-        if(data.type==='sync'){ ball=data.ball; score=data.score; goalMsg=data.goalMsg; activeCount=data.count; data.players.forEach((p,i)=>Object.assign(players[i],p)); }
+        if(data.type==='sync'){ 
+            ball=data.ball; score=data.score; goalMsg=data.goalMsg; activeCount=data.count; 
+            data.players.forEach((p,i)=>Object.assign(players[i],p)); 
+        }
     });
     function iLoop(){ if(conn.open) conn.send({type:'input', keys:getInputs()}); requestAnimationFrame(iLoop); }
     iLoop(); requestAnimationFrame(gameLoop);
@@ -157,7 +160,13 @@ function getInputs() {
     let ax=0, ay=0; const gps=navigator.getGamepads(); const gp=gps[0]||gps[1];
     if(gp){ if(Math.abs(gp.axes[0])>0.15)ax=gp.axes[0]; if(Math.abs(gp.axes[1])>0.15)ay=gp.axes[1]; }
     if(ax===0 && ay===0){ if(rawKeys['ArrowLeft']||rawKeys['KeyA'])ax--; if(rawKeys['ArrowRight']||rawKeys['KeyD'])ax++; if(rawKeys['ArrowUp']||rawKeys['KeyW'])ay--; if(rawKeys['ArrowDown']||rawKeys['KeyS'])ay++; const m=Math.sqrt(ax*ax+ay*ay); if(m>0){ax/=m; ay/=m;} }
-    return { ax, ay, kick: (gp && (gp.buttons[0].pressed||gp.buttons[2].pressed))||rawKeys['Space'], boost: (gp && (gp.buttons[5].pressed||gp.buttons[7].pressed))||rawKeys['ShiftLeft'] };
+    // Ottimizzato riconoscimento tasti Shift e Spazio per guest
+    return { 
+        ax, 
+        ay, 
+        kick: (gp && (gp.buttons[0].pressed||gp.buttons[2].pressed)) || !!rawKeys['Space'], 
+        boost: (gp && (gp.buttons[5].pressed||gp.buttons[7].pressed)) || !!rawKeys['ShiftLeft'] || !!rawKeys['ShiftRight']
+    };
 }
 
 function resolve(c1, c2, post=false) {
@@ -173,7 +182,7 @@ function resolve(c1, c2, post=false) {
 
 function checkLimits(o, isBall) {
     if(!o || o.x < -500) return;
-    const bounce = 0.576; // Riduzione 4%
+    const bounce = 0.576; 
     if (isBall) {
         if(o.y - o.r < OFFSET_TOP + 15) { o.vy *= -bounce; o.y = OFFSET_TOP + 15 + o.r; }
         if(o.y + o.r > TOTAL_H - 15) { o.vy *= -bounce; o.y = TOTAL_H - 15 - o.r; }
@@ -219,14 +228,14 @@ function gameLoop(t) {
             players.forEach((p,i)=>{
                 if(i>=activeCount)return;
                 const now=Date.now(); 
-                let s=0.155, f=0.9; // Velocità -4%
+                let s=0.155, f=0.9;
                 if(ins[i].boost && now>=p.boostReadyTime){p.boostEndTime=now+200;p.boostReadyTime=now+10000;playSound(0.15);}
-                if(now<p.boostEndTime){s=0.388;f=0.86;} // Boost -4%
+                if(now<p.boostEndTime){s=0.388;f=0.86;}
                 p.vx+=ins[i].ax*s; p.vy+=ins[i].ay*s; p.vx*=f; p.vy*=f;
                 p.x+=p.vx; p.y+=p.vy;
                 if(ins[i].kick) { 
                     let dx=ball.x-p.x, dy=ball.y-p.y, d=Math.sqrt(dx*dx+dy*dy); 
-                    if(d<p.r+ball.r+8){ball.vx=(dx/d)*4.32; ball.vy=(dy/d)*4.32; p.kick=15; playSound(0.13);} // Tiro -4%
+                    if(d<p.r+ball.r+8){ball.vx=(dx/d)*4.32; ball.vy=(dy/d)*4.32; p.kick=15; playSound(0.13);} 
                 }
                 if(p.kick>0)p.kick--; checkLimits(p,false); resolve(p,ball); posts.forEach(post=>resolve(post,p,true));
             });
@@ -269,13 +278,17 @@ function draw() {
         ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
         let bc = "black"; 
         if(now < p.boostEndTime) bc = "#FFEB3B"; 
-        else if(p.kick > 0) bc = "white";         
+        else if(p.kick > 0) bc = "white";          
         else if(now < p.boostReadyTime) bc = "#444"; 
         ctx.strokeStyle = bc; ctx.lineWidth = 4; ctx.stroke();
         ctx.fillStyle = s.cNum; ctx.font = "bold 16px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(p.number, p.x, p.y + 1);
     });
 
-    ctx.fillStyle="white"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill();
+    // Disegno palla con bordino nero
+    ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2);
+    ctx.fillStyle="white"; ctx.fill();
+    ctx.strokeStyle="black"; ctx.lineWidth=1.5; ctx.stroke();
+
     if(goalMsg.timer>0){ ctx.font="bold 80px sans-serif"; ctx.fillStyle="white"; ctx.textAlign="center"; ctx.fillText(goalMsg.text,MID_X,MID_Y_GAME); }
     document.getElementById('live-score').innerText=`${score[0]} - ${score[1]}`;
 }
