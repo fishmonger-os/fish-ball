@@ -2,19 +2,14 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>FISHBALL 3vs3 - Verified Lobby</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; touch-action: none; }
-        
-        /* Contenitore per gestire la scalabilità e rotazione */
-        #game-container { position: relative; display: flex; justify-content: center; align-items: center; width: 100%; height: 100%; }
-        
-        canvas { border: 5px solid #222; box-shadow: 0 0 50px rgba(0,0,0,0.5); width: 956px; height: 654px; background-color: #2e7d32; max-width: 100%; max-height: 100%; object-fit: contain; }
-
+        body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
+        canvas { border: 5px solid #222; box-shadow: 0 0 50px rgba(0,0,0,0.5); width: 956px; height: 654px; background-color: #2e7d32; max-width: 95vw; max-height: 80vh; object-fit: contain; position: relative; }
         #menu-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(5px); }
-        .lobby-box { background: #222; padding: 30px; border-radius: 20px; border: 1px solid #444; text-align: center; min-width: 450px; max-width: 90vw; }
+        .lobby-box { background: #222; padding: 30px; border-radius: 20px; border: 1px solid #444; text-align: center; min-width: 450px; }
         .team-settings { display: flex; justify-content: space-around; margin: 20px 0; gap: 15px; }
         .team-box { background: #333; padding: 12px; border-radius: 12px; flex: 1; border: 1px solid #444; }
         .color-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin-top: 10px; justify-items: center; }
@@ -25,48 +20,35 @@
         #start-btn { background: #4CAF50; color: white; border: none; padding: 15px 50px; font-size: 1.2em; cursor: pointer; border-radius: 30px; display: none; font-weight: bold; text-transform: uppercase; margin-top: 10px; }
         .score-container { position: absolute; bottom: 20px; right: 40px; font-size: 3em; font-weight: 900; pointer-events: none; z-index: 5; font-family: monospace; }
         input#link-input { background: #1a1a1a; color: #00ff00; border: 1px solid #333; padding: 10px; width: 90%; margin-top: 10px; cursor: pointer; border-radius: 5px; font-family: monospace; text-align: center; }
-
-        /* Avviso rotazione per mobile */
-        #rotate-notice { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #111; z-index: 100; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
-        @media screen and (max-width: 900px) and (orientation: portrait) {
-            #rotate-notice { display: flex; }
-        }
     </style>
 </head>
 <body>
 
-    <div id="rotate-notice">
-        <h2 style="color:#4CAF50;">RUOTA IL DISPOSITIVO</h2>
-        <p>Per giocare a FISHBALL, usa la modalità Landscape (Orizzontale).</p>
-    </div>
-
-    <div id="game-container">
-        <div id="menu-overlay">
-            <div class="lobby-box">
-                <h1 style="margin:0; color:#4CAF50; letter-spacing: 2px;">FISHBALL 3vs3</h1>
-                <div id="status-text">Generazione ID...</div>
-                <div class="team-settings" id="host-controls" style="display:none;">
-                    <div class="team-box">
-                        <div style="font-size: 0.8em; opacity: 0.7;">SQUADRA 1</div>
-                        <div class="color-grid" id="picker-t1"></div>
-                    </div>
-                    <div class="team-box">
-                        <div style="font-size: 0.8em; opacity: 0.7;">SQUADRA 2</div>
-                        <div class="color-grid" id="picker-t2"></div>
-                    </div>
+    <div id="menu-overlay">
+        <div class="lobby-box">
+            <h1 style="margin:0; color:#4CAF50; letter-spacing: 2px;">FISHBALL 3vs3</h1>
+            <div id="status-text">Generazione ID...</div>
+            <div class="team-settings" id="host-controls" style="display:none;">
+                <div class="team-box">
+                    <div style="font-size: 0.8em; opacity: 0.7;">SQUADRA 1</div>
+                    <div class="color-grid" id="picker-t1"></div>
                 </div>
-                <div class="player-status-grid">
-                    <div id="slot0" class="p-slot">P1 (HOST)</div> <div id="slot1" class="p-slot">P2</div>
-                    <div id="slot2" class="p-slot">P3</div> <div id="slot3" class="p-slot">P4</div>
-                    <div id="slot4" class="p-slot">P5</div> <div id="slot5" class="p-slot">P6</div>
+                <div class="team-box">
+                    <div style="font-size: 0.8em; opacity: 0.7;">SQUADRA 2</div>
+                    <div class="color-grid" id="picker-t2"></div>
                 </div>
-                <button id="start-btn" onclick="startGame()">GIOCA ORA</button>
             </div>
+            <div class="player-status-grid">
+                <div id="slot0" class="p-slot">P1 (HOST)</div> <div id="slot1" class="p-slot">P2</div>
+                <div id="slot2" class="p-slot">P3</div> <div id="slot3" class="p-slot">P4</div>
+                <div id="slot4" class="p-slot">P5</div> <div id="slot5" class="p-slot">P6</div>
+            </div>
+            <button id="start-btn" onclick="startGame()">GIOCA ORA</button>
         </div>
-
-        <div id="live-score" class="score-container">0 - 0</div>
-        <canvas id="gameCanvas" width="956" height="654"></canvas>
     </div>
+
+    <div id="live-score" class="score-container">0 - 0</div>
+    <canvas id="gameCanvas" width="956" height="654"></canvas>
 
 <script>
 // --- AUDIO & COSTANTI ---
@@ -316,8 +298,7 @@ window.addEventListener('keyup', e => rawKeys[e.code] = false);
 
 // --- RENDERING ---
 function draw() {
-    const canvas = document.getElementById('gameCanvas');
-    const ctx = canvas.getContext('2d');
+    const ctx = document.getElementById('gameCanvas').getContext('2d');
     const now = Date.now();
     ctx.fillStyle = "#2e7d32"; ctx.fillRect(0, 0, W, TOTAL_H);
     if (bannerLoaded) { ctx.drawImage(topImage, 0, 0, W, OFFSET_TOP); }
@@ -331,18 +312,24 @@ function draw() {
     ctx.strokeStyle = "#FFF"; ctx.strokeRect(15, MID_Y_GAME-65, 30, 130); ctx.strokeRect(W-45, MID_Y_GAME-65, 30, 130);
     posts.forEach(p => { ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.stroke(); });
     
-    // Disegno Giocatori ed Etichette
     for(let i=0; i<6; i++) {
         const p = players[i]; if (p.x < -500) continue;
+        
+        // Disegno corpo giocatore
         ctx.fillStyle = (i % 2 === 0) ? teamColors[0] : teamColors[1];
         ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
+        
+        // Bordo dinamico
         ctx.strokeStyle = (now < p.boostEndTime) ? "#FFEB3B" : (p.kick > 0 ? "#FFF" : (now < p.boostReadyTime ? "#9E9E9E" : "#000"));
         ctx.lineWidth = 4; ctx.stroke();
         
-        // Etichetta Giocatore (P1, P2, ecc.)
+        // Testo P1, P2... sopra il giocatore
         ctx.fillStyle = "white";
-        ctx.font = "bold 14px sans-serif";
+        ctx.font = "bold 12px sans-serif";
         ctx.textAlign = "center";
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 2;
+        ctx.strokeText("P" + (i + 1), p.x, p.y - p.r - 8);
         ctx.fillText("P" + (i + 1), p.x, p.y - p.r - 8);
     }
     
