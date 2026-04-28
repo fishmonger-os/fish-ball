@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FISHBALL 3vs3 - Online Fixed</title>
+    <title>FISHBALL 3vs3 - Verified Lobby</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -18,10 +18,13 @@
         .player-status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 15px 0; font-size: 0.9em; color: #666; }
         .p-slot.active { color: #4CAF50; font-weight: bold; }
         #start-btn { background: #4CAF50; color: white; border: none; padding: 15px 50px; font-size: 1.2em; cursor: pointer; border-radius: 30px; display: none; font-weight: bold; text-transform: uppercase; margin-top: 10px; }
+        
         .ui-bottom-right { position: absolute; bottom: 20px; right: 40px; text-align: right; pointer-events: none; z-index: 5; font-family: monospace; }
         #live-score { font-size: 3em; font-weight: 900; line-height: 1; }
         .timer-display { font-size: 1.2em; font-weight: bold; margin-bottom: 5px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
+        
         input#link-input { background: #1a1a1a; color: #00ff00; border: 1px solid #333; padding: 10px; width: 90%; margin-top: 10px; cursor: pointer; border-radius: 5px; font-family: monospace; text-align: center; }
+        .esc-hint { position: absolute; top: 160px; left: 20px; font-size: 0.7em; opacity: 0.5; pointer-events: none; }
     </style>
 </head>
 <body>
@@ -49,6 +52,8 @@
         </div>
     </div>
 
+    <div class="esc-hint">ESC per uscire</div>
+
     <div class="ui-bottom-right">
         <div id="timer-boost" class="timer-display" style="color: #FFEB3B;"></div>
         <div id="timer-lob" class="timer-display" style="color: #00FF00;"></div>
@@ -58,6 +63,7 @@
     <canvas id="gameCanvas" width="956" height="720"></canvas>
 
 <script>
+// --- CONFIGURAZIONE ---
 const PRESET_COLORS = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#008000', '#800000', '#000080', '#808000', '#FFFFFF', '#808080', '#000000', '#A52A2A'];
 let teamColors = [PRESET_COLORS[0], PRESET_COLORS[2]];
 const W = 956, H_GAME = 504, OFFSET_TOP = 150, TOTAL_H = 720;
@@ -65,7 +71,7 @@ const MID_X = W / 2, MID_Y_GAME = OFFSET_TOP + (H_GAME / 2);
 const FIELD_MARGIN_X = 45;
 
 let players = Array.from({length: 6}, () => ({ x: -1000, y: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, boostEndTime: 0, boostReadyTime: 0, lobReadyTime: 0 }));
-let ball = { x: MID_X, y: MID_Y_GAME, z: 0, vx: 0, vy: 0, vz: 0, r: 10, m: 1, powerEffectEnd: 0 };
+let ball = { x: MID_X, y: MID_Y_GAME, z: 0, vx: 0, vy: 0, vz: 0, r: 10, m: 1 };
 let score = [0, 0];
 let goalMsg = { text: "", timer: 0 };
 let isGoalProcessed = false;
@@ -106,6 +112,7 @@ peer.on('connection', conn => {
     conn.on('data', data => { 
         if(data.type === 'join') { if (!connections.find(c => c.peer === conn.peer)) { connections.push(conn); conn.send({ type: 'initSlot', slot: connections.length }); refreshLobbyState(); } }
         if(data.type === 'input') { const idx = connections.indexOf(conn) + 1; allRemoteKeys[idx] = data.keys; }
+        // Se un client preme ESC e non è l'host, in questa versione semplice non fa nulla, ma l'host può resettare per tutti.
     });
 });
 
@@ -120,12 +127,7 @@ function setupGuest(conn) {
         if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; updateLobbySlots(); }
         if (data.type === 'start') { gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; }
         if (data.type === 'backToLobby') { gameStarted = false; document.getElementById('menu-overlay').style.display = "flex"; }
-        if (data.type === 'sync') { 
-            // FIX: Sincronizzazione totale stato palla e giocatori
-            ball = data.ball; 
-            score = data.score; 
-            data.players.forEach((p, i) => { if(players[i]) Object.assign(players[i], p); }); 
-        }
+        if (data.type === 'sync') { ball = data.ball; score = data.score; data.players.forEach((p, i) => { if(players[i]) Object.assign(players[i], p); }); }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; playSound(0.4); }
     });
     function inputLoop() { updateInput(); if(conn.open) conn.send({type:'input', keys}); requestAnimationFrame(inputLoop); }
@@ -146,11 +148,15 @@ function initColorPickers() {
 
 function startGame() { if(isHost){ score = [0, 0]; gameStarted = true; document.getElementById('menu-overlay').style.display="none"; resetPos(); sendToAll({type:'start'}); } }
 
+// --- NUOVA FUNZIONE PER TORNARE IN LOBBY ---
 function backToLobby() {
     if(!gameStarted) return;
     gameStarted = false;
     document.getElementById('menu-overlay').style.display = "flex";
-    if(isHost) { sendToAll({ type: 'backToLobby' }); refreshLobbyState(); }
+    if(isHost) {
+        sendToAll({ type: 'backToLobby' });
+        refreshLobbyState();
+    }
 }
 
 function resolve(c1, c2, isPost = false) {
@@ -167,7 +173,6 @@ function resolve(c1, c2, isPost = false) {
             let impulse = -(1 + bounce) * dot / (1/(isPost?100:c1.m) + 1/c2.m);
             c2.vx += (impulse * nx) / c2.m; c2.vy += (impulse * ny) / c2.m;
             if (!isPost) { c1.vx -= (impulse * nx) / c1.m; c1.vy -= (impulse * ny) / c1.m; }
-            if(c2 === ball) ball.powerEffectEnd = 0; // Spegne effetto se intercettata
         }
     }
 }
@@ -189,8 +194,8 @@ function checkLimits(o, isBall) {
 }
 
 function resetPos() {
-    isGoalProcessed = false; ball = { x: MID_X, y: MID_Y_GAME, z: 0, vx: 0, vy: 0, vz: 0, r: 10, m: 1, powerEffectEnd: 0 };
-    players.forEach(p => Object.assign(p, {x:-1000, y:-1000, vx:0, vy:0, boostReadyTime:0, lobReadyTime:0})); 
+    isGoalProcessed = false; ball = { x: MID_X, y: MID_Y_GAME, z: 0, vx: 0, vy: 0, vz: 0, r: 10, m: 1 };
+    players.forEach(p => Object.assign(p, {x:-1000, y:-1000, vx:0, vy:0, boostReadyTime:0})); 
     if (activeCount >= 1) { players[0].x = FIELD_MARGIN_X + 185; players[0].y = MID_Y_GAME; }
     if (activeCount >= 2) { players[1].x = W - FIELD_MARGIN_X - 185; players[1].y = MID_Y_GAME; }
     if (activeCount >= 3) { players[2].x = FIELD_MARGIN_X + 100; players[2].y = MID_Y_GAME - 80; }
@@ -202,18 +207,22 @@ function resetPos() {
 function updateInput() {
     keys.ax = 0; keys.ay = 0; keys.kick = false; keys.boost = false; keys.lob = false;
     let kx = 0, ky = 0;
+    
     if (rawKeys['ArrowLeft'] || rawKeys['KeyA']) kx--; if (rawKeys['ArrowRight'] || rawKeys['KeyD']) kx++;
     if (rawKeys['ArrowUp'] || rawKeys['KeyW']) ky--; if (rawKeys['ArrowDown'] || rawKeys['KeyS']) ky++;
     if (rawKeys['Space'] || rawKeys['KeyX']) keys.kick = true;
     if (rawKeys['KeyC'] || rawKeys['KeyQ']) keys.lob = true;
     if (rawKeys['ShiftLeft'] || rawKeys['ShiftRight']) keys.boost = true;
+
     const gp = navigator.getGamepads()[0];
     if (gp) {
-        if (Math.abs(gp.axes[0]) > 0.1) kx = gp.axes[0]; if (Math.abs(gp.axes[1]) > 0.1) ky = gp.axes[1];
+        if (Math.abs(gp.axes[0]) > 0.1) kx = gp.axes[0];
+        if (Math.abs(gp.axes[1]) > 0.1) ky = gp.axes[1];
         if (gp.buttons[0].pressed || gp.buttons[2].pressed) keys.kick = true; 
         if (gp.buttons[1].pressed) keys.lob = true; 
         if (gp.buttons[3].pressed || gp.buttons[5].pressed) keys.boost = true; 
     }
+
     if (kx || ky) { const mag = Math.sqrt(kx*kx + ky*ky); if(mag > 1) {kx/=mag; ky/=mag;} keys.ax = kx; keys.ay = ky; }
 }
 
@@ -227,11 +236,10 @@ function movePlayer(p, input) {
     let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy);
     if (d < p.r + ball.r + 8 && ball.z < 15) {
         if (input.lob && now >= p.lobReadyTime) {
-            ball.vx = (dx/d)*6.3; ball.vy = (dy/d)*6.3; ball.vz = 0; ball.z = 0;
-            ball.powerEffectEnd = now + 2000; // Effetto dura 2 secondi
-            p.kick = 15; p.lobReadyTime = now + 30000; playSound(0.2);
+            ball.vx = (dx/d)*2.8; ball.vy = (dy/d)*2.8; ball.vz = 1.6; p.kick = 15; 
+            p.lobReadyTime = now + 30000; playSound(0.13);
         }
-        else if (input.kick) { ball.vx = (dx/d)*4.5; ball.vy = (dy/d)*4.5; ball.vz = 0; ball.powerEffectEnd = 0; p.kick = 15; playSound(0.13); }
+        else if (input.kick) { ball.vx = (dx/d)*4.5; ball.vy = (dy/d)*4.5; p.kick = 15; playSound(0.13); }
     }
     if (p.kick > 0) p.kick--;
 }
@@ -257,23 +265,18 @@ function gameLoop(t) {
             posts.forEach(p => resolve(p, ball, true));
         }
         checkLimits(ball, true); for(let i=0; i<activeCount; i++) checkLimits(players[i], false);
-        
-        // FIX: Sincronizzazione più frequente (16ms) e inclusione di TUTTO lo stato (effetti inclusi)
-        if (t - lastSync > 16) { 
-            sendToAll({ 
-                type: 'sync', 
-                ball: ball, // Ora include powerEffectEnd
-                players: players.slice(0, activeCount), // Include i timer boost/lob
-                score: score 
-            }); 
-            lastSync = t; 
-        }
+        if (t - lastSync > 25) { sendToAll({ type: 'sync', ball, players: players.slice(0, activeCount), score }); lastSync = t; }
     }
     if (goalMsg.timer > 0) goalMsg.timer--;
     draw(); requestAnimationFrame(gameLoop);
 }
 
-window.addEventListener('keydown', e => { rawKeys[e.code] = true; if(audioCtx.state === 'suspended') audioCtx.resume(); if(e.code === 'Escape') backToLobby(); });
+window.addEventListener('keydown', e => { 
+    rawKeys[e.code] = true; 
+    if(audioCtx.state === 'suspended') audioCtx.resume();
+    // GESTIONE TASTO ESC
+    if(e.code === 'Escape') backToLobby();
+});
 window.addEventListener('keyup', e => rawKeys[e.code] = false);
 
 function draw() {
@@ -295,10 +298,12 @@ function draw() {
     if (myP) {
         const bRem = Math.ceil((myP.boostReadyTime - now) / 1000);
         const lRem = Math.ceil((myP.lobReadyTime - now) / 1000);
-        document.getElementById('timer-boost').innerText = "BST: " + (bRem > 0 ? bRem + "s" : "READY");
-        document.getElementById('timer-lob').innerText = "PWR: " + (lRem > 0 ? lRem + "s" : "READY");
-        document.getElementById('timer-boost').style.color = (bRem > 0) ? "#FFEB3B" : "#4CAF50";
-        document.getElementById('timer-lob').style.color = (lRem > 0) ? "#00FFFF" : "#4CAF50";
+        const bEl = document.getElementById('timer-boost');
+        const lEl = document.getElementById('timer-lob');
+        bEl.innerText = "BST: " + (bRem > 0 ? bRem + "s" : "READY");
+        lEl.innerText = "LOB: " + (lRem > 0 ? lRem + "s" : "READY");
+        bEl.style.color = (bRem > 0) ? "#FFEB3B" : "#4CAF50";
+        lEl.style.color = (lRem > 0) ? "#00FF00" : "#4CAF50";
     }
 
     for(let i=0; i<activeCount; i++) {
@@ -312,18 +317,8 @@ function draw() {
         ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center";
         ctx.fillText("P" + (i + 1), p.x, p.y - p.r - 8);
     }
-
-    // FIX: Effetto celeste palla ora visibile a tutti
-    const isPowered = now < ball.powerEffectEnd;
     if (ball.z > 0) { ctx.fillStyle = "rgba(0,0,0,0.2)"; ctx.beginPath(); ctx.ellipse(ball.x, ball.y, ball.r * (0.8 + ball.z/100), ball.r * 0.4, 0, 0, Math.PI*2); ctx.fill(); }
-    ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y - ball.z, ball.r + (ball.z/40), 0, Math.PI*2); ctx.fill(); 
-    
-    ctx.strokeStyle = isPowered ? "#00FFFF" : "#000";
-    ctx.lineWidth = isPowered ? 4 : 1;
-    if(isPowered) { ctx.shadowBlur = 15; ctx.shadowColor = "#00FFFF"; }
-    ctx.stroke();
-    ctx.shadowBlur = 0; 
-
+    ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y - ball.z, ball.r + (ball.z/40), 0, Math.PI*2); ctx.fill(); ctx.strokeStyle = "#000"; ctx.lineWidth=1; ctx.stroke();
     if (goalMsg.timer > 0) { ctx.font = "bold 80px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "white"; ctx.fillText(goalMsg.text, MID_X, MID_Y_GAME); }
     document.getElementById('live-score').innerText = `${score[0]} - ${score[1]}`;
 }
