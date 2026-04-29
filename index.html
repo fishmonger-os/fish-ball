@@ -22,6 +22,12 @@
         #live-score { font-size: 3em; font-weight: 900; line-height: 1; }
         .timer-display { font-size: 1.2em; font-weight: bold; margin-bottom: 5px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
         input#link-input { background: #1a1a1a; color: #00ff00; border: 1px solid #333; padding: 10px; width: 90%; margin-top: 10px; cursor: pointer; border-radius: 5px; font-family: monospace; text-align: center; }
+        
+        /* Nuovi stili per i tasti squadra */
+        .team-selector-btns { margin-top: 15px; display: flex; gap: 10px; justify-content: center; }
+        .team-btn { padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; font-size: 0.8em; }
+        .btn-t1 { background: #800000; }
+        .btn-t2 { background: #000080; }
     </style>
 </head>
 <body>
@@ -45,6 +51,12 @@
                 <div id="slot2" class="p-slot">P3</div> <div id="slot3" class="p-slot">P4</div>
                 <div id="slot4" class="p-slot">P5</div> <div id="slot5" class="p-slot">P6</div>
             </div>
+            
+            <div id="host-team-controls" style="display:none;" class="team-selector-btns">
+                <button class="team-btn btn-t1" onclick="assignGuestsToTeam(0)">Guest in Team 1 (Rosso)</button>
+                <button class="team-btn btn-t2" onclick="assignGuestsToTeam(1)">Guest in Team 2 (Blu)</button>
+            </div>
+
             <button id="start-btn" onclick="startGame()">GIOCA ORA</button>
         </div>
     </div>
@@ -60,11 +72,15 @@
 <script>
 const PRESET_COLORS = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#008000', '#800000', '#000080', '#808000', '#FFFFFF', '#808080', '#000000', '#A52A2A'];
 let teamColors = [PRESET_COLORS[0], PRESET_COLORS[2]];
-const W = 956, H_GAME = 504, OFFSET_TOP = 150, TOTAL_H = 720;
+const W = 956, OFFSET_TOP = 130, TOTAL_H = 720;
+const H_GAME = TOTAL_H - OFFSET_TOP - 20; 
 const MID_X = W / 2, MID_Y_GAME = OFFSET_TOP + (H_GAME / 2);
 const FIELD_MARGIN_X = 45;
+const GOAL_SIZE_HALF = 65 * 1.05; 
 
-let players = Array.from({length: 6}, () => ({ x: -1000, y: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, boostEndTime: 0, boostReadyTime: 0, pwrReadyTime: 0 }));
+let players = Array.from({length: 6}, () => ({ x: -1000, y: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, boostEndTime: 0, boostReadyTime: 0, pwrReadyTime: 0, team: 0 }));
+let playerTeams = [0, 1, 0, 1, 0, 1]; // Default alternato
+let botGK = { x: -1000, y: -1000, vx: 0, vy: 0, r: 10, m: 6, active: false, team: -1 };
 let ball = { x: MID_X, y: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1, isPowered: false };
 let score = [0, 0];
 let goalMsg = { text: "", timer: 0 };
@@ -72,7 +88,7 @@ let isGoalProcessed = false;
 const msgLib = ["GOOOOL!", "BOMBER!", "CHAPEAU!", "RETE!"];
 const keys = { ax: 0, ay: 0, kick: false, boost: false, pwr: false };
 let allRemoteKeys = {}; const rawKeys = {};
-const posts = [{x:45, y:MID_Y_GAME-65, r:5.6}, {x:45, y:MID_Y_GAME+65, r:5.6}, {x:W-45, y:MID_Y_GAME-65, r:5.6}, {x:W-45, y:MID_Y_GAME+65, r:5.6}];
+const posts = [{x:45, y:MID_Y_GAME-GOAL_SIZE_HALF, r:5.6}, {x:45, y:MID_Y_GAME+GOAL_SIZE_HALF, r:5.6}, {x:W-45, y:MID_Y_GAME-GOAL_SIZE_HALF, r:5.6}, {x:W-45, y:MID_Y_GAME+GOAL_SIZE_HALF, r:5.6}];
 
 let topImage = new Image(); 
 let bannerLoaded = false;
@@ -99,7 +115,14 @@ let connections = [], isHost = false, gameStarted = false, activeCount = 1, last
 peer.on('open', id => {
     const joinId = new URLSearchParams(window.location.search).get('join');
     if (joinId) { isHost = false; const conn = peer.connect(joinId, { reliable: true }); setupGuest(conn); }
-    else { isHost = true; mySlot = 0; document.getElementById('status-text').innerHTML = `Link Squadra:<br><input type="text" id="link-input" value="${window.location.origin + window.location.pathname}?join=${id}" readonly onclick="this.select(); document.execCommand('copy');">`; document.getElementById('slot0').classList.add('active'); document.getElementById('start-btn').style.display = "inline-block"; initColorPickers(); requestAnimationFrame(gameLoop); }
+    else { 
+        isHost = true; mySlot = 0; 
+        document.getElementById('status-text').innerHTML = `Link Squadra:<br><input type="text" id="link-input" value="${window.location.origin + window.location.pathname}?join=${id}" readonly onclick="this.select(); document.execCommand('copy');">`; 
+        document.getElementById('slot0').classList.add('active'); 
+        document.getElementById('start-btn').style.display = "inline-block"; 
+        document.getElementById('host-team-controls').style.display = "flex";
+        initColorPickers(); requestAnimationFrame(gameLoop); 
+    }
 });
 
 peer.on('connection', conn => {
@@ -109,7 +132,20 @@ peer.on('connection', conn => {
     });
 });
 
-function refreshLobbyState() { if(!isHost) return; activeCount = connections.length + 1; updateLobbySlots(); sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors }); }
+function assignGuestsToTeam(teamId) {
+    if(!isHost) return;
+    // P1 (Host) resta fisso, gli altri vengono spostati
+    for(let i=1; i<6; i++) playerTeams[i] = teamId;
+    refreshLobbyState();
+}
+
+function refreshLobbyState() { 
+    if(!isHost) return; 
+    activeCount = connections.length + 1; 
+    updateLobbySlots(); 
+    sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors, teams: playerTeams }); 
+}
+
 function updateLobbySlots() { for(let i=0; i<6; i++) { const el = document.getElementById('slot'+i); (i < activeCount) ? el.classList.add('active') : el.classList.remove('active'); } }
 function sendToAll(d) { connections.forEach(c => { if(c.open) c.send(d); }); }
 
@@ -117,12 +153,18 @@ function setupGuest(conn) {
     conn.on('open', () => { conn.send({ type: 'join' }); document.getElementById('status-text').innerText = "In attesa dell'Host..."; });
     conn.on('data', data => {
         if (data.type === 'initSlot') mySlot = data.slot;
-        if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; updateLobbySlots(); }
+        if (data.type === 'lobbyUpdate') { 
+            activeCount = data.count + 1; 
+            teamColors = data.colors; 
+            playerTeams = data.teams;
+            updateLobbySlots(); 
+        }
         if (data.type === 'start') { gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; }
         if (data.type === 'backToLobby') { gameStarted = false; document.getElementById('menu-overlay').style.display = "flex"; }
         if (data.type === 'sync') { 
             ball = data.ball; 
             score = data.score; 
+            botGK = data.botGK;
             data.players.forEach((p, i) => { if(players[i]) Object.assign(players[i], p); }); 
         }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; playSound(0.4); }
@@ -138,7 +180,7 @@ function initColorPickers() {
         const container = document.getElementById('picker-t' + tIdx); container.innerHTML = '';
         PRESET_COLORS.forEach(color => {
             const dot = document.createElement('div'); dot.className = 'color-dot' + (teamColors[tIdx-1] === color ? ' active' : ''); dot.style.backgroundColor = color;
-            dot.onclick = () => { teamColors[tIdx-1] = color; initColorPickers(); sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors }); }; container.appendChild(dot);
+            dot.onclick = () => { teamColors[tIdx-1] = color; initColorPickers(); refreshLobbyState(); }; container.appendChild(dot);
         });
     });
 }
@@ -177,7 +219,7 @@ function checkLimits(o, isBall) {
             o.vy *= -0.54; o.y = o.y < MID_Y_GAME ? OFFSET_TOP + 15 + o.r : limitY - o.r;
             ball.isPowered = false;
         }
-        if (o.y > MID_Y_GAME - 65 && o.y < MID_Y_GAME + 65) {
+        if (o.y > MID_Y_GAME - GOAL_SIZE_HALF && o.y < MID_Y_GAME + GOAL_SIZE_HALF) {
             if (o.x - o.r < 15) { o.x = 15 + o.r; } if (o.x + o.r > W - 15) { o.x = W - 15 - o.r; }
         } else { if (o.x - o.r < 45 || o.x + o.r > W - 45) { 
             o.vx *= -0.54; o.x = o.x < MID_X ? 45 + o.r : W - 45 - o.r; 
@@ -185,22 +227,43 @@ function checkLimits(o, isBall) {
         } }
     } else {
         if (o.y < OFFSET_TOP + 15) o.y = OFFSET_TOP + 15; if (o.y > limitY) o.y = limitY;
-        if (o.x < 45) o.x = 45; if (o.x > W - 45) o.x = W - 45;
+        if (o.x < 45 && !(o === botGK)) o.x = 45; if (o.x > W - 45 && !(o === botGK)) o.x = W - 45;
     }
 }
 
 function resetPos() {
     isGoalProcessed = false; ball = { x: MID_X, y: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1, isPowered: false };
-    players.forEach(p => {
+    players.forEach((p, i) => {
         p.x = -1000; p.y = -1000; p.vx = 0; p.vy = 0; 
         p.boostReadyTime = 0; p.boostEndTime = 0; p.pwrReadyTime = 0;
+        p.team = playerTeams[i];
     }); 
-    if (activeCount >= 1) { players[0].x = FIELD_MARGIN_X + 185; players[0].y = MID_Y_GAME; }
-    if (activeCount >= 2) { players[1].x = W - FIELD_MARGIN_X - 185; players[1].y = MID_Y_GAME; }
-    if (activeCount >= 3) { players[2].x = FIELD_MARGIN_X + 100; players[2].y = MID_Y_GAME - 80; }
-    if (activeCount >= 4) { players[3].x = W - FIELD_MARGIN_X - 100; players[3].y = MID_Y_GAME + 80; }
-    if (activeCount >= 5) { players[4].x = FIELD_MARGIN_X + 40; players[4].y = MID_Y_GAME; }
-    if (activeCount >= 6) { players[5].x = W - FIELD_MARGIN_X - 40; players[5].y = MID_Y_GAME; }
+    
+    // Posizionamento in base alla squadra assegnata
+    let t1Count = 0, t2Count = 0;
+    for(let i=0; i<activeCount; i++) {
+        if(players[i].team === 0) {
+            players[i].x = FIELD_MARGIN_X + 100 + (t1Count * 40);
+            players[i].y = MID_Y_GAME + (t1Count * 60 - 60);
+            t1Count++;
+        } else {
+            players[i].x = W - FIELD_MARGIN_X - 100 - (t2Count * 40);
+            players[i].y = MID_Y_GAME + (t2Count * 60 - 60);
+            t2Count++;
+        }
+    }
+
+    if (activeCount % 2 !== 0) {
+        botGK.active = true;
+        botGK.team = 1; 
+        if (activeCount === 3 || activeCount === 5) botGK.team = 1; 
+        botGK.x = (botGK.team === 0) ? 40 : 916;
+        botGK.y = MID_Y_GAME;
+        botGK.vy = 0;
+    } else {
+        botGK.active = false;
+        botGK.x = -1000;
+    }
 }
 
 function updateInput() {
@@ -242,36 +305,51 @@ function movePlayer(p, input) {
     if (p.kick > 0) p.kick--;
 }
 
+function moveBotGK() {
+    if(!botGK.active || goalMsg.timer > 0) return;
+    botGK.x = (botGK.team === 0) ? 40 : 916;
+    let distBallX = Math.abs(ball.x - botGK.x);
+    let targetY = MID_Y_GAME;
+    if (distBallX < 300) targetY = ball.y;
+    const minGoalY = MID_Y_GAME - (GOAL_SIZE_HALF - 12), maxGoalY = MID_Y_GAME + (GOAL_SIZE_HALF - 12);
+    if (targetY < minGoalY) targetY = minGoalY;
+    if (targetY > maxGoalY) targetY = maxGoalY;
+    botGK.vy += (targetY - botGK.y) * 0.012; 
+    botGK.vy *= 0.75;      
+    botGK.y += botGK.vy;
+    let dist = Math.sqrt((ball.x - botGK.x)**2 + (ball.y - botGK.y)**2);
+    if (dist < botGK.r + ball.r + 10) {
+        let dx = ball.x - botGK.x, ddy = ball.y - botGK.y, d = Math.sqrt(dx*dx + ddy*ddy);
+        ball.vx = (dx/d)*5; ball.vy = (ddy/d)*5;
+        playSound(0.1);
+    }
+}
+
 function gameLoop(t) {
     if (isHost && gameStarted) {
         updateInput(); 
         if (goalMsg.timer <= 0) {
-            if (!isGoalProcessed && ball.y > MID_Y_GAME - 65 && ball.y < MID_Y_GAME + 65) {
+            if (!isGoalProcessed && ball.y > MID_Y_GAME - GOAL_SIZE_HALF && ball.y < MID_Y_GAME + GOAL_SIZE_HALF) {
                 if (ball.x + ball.r < FIELD_MARGIN_X) { isGoalProcessed = true; score[1]++; goalMsg = {text: msgLib[Math.floor(Math.random()*msgLib.length)], timer:120}; sendToAll({type:'goal', text:goalMsg.text, score}); setTimeout(resetPos, 2000); }
                 else if (ball.x - ball.r > W - FIELD_MARGIN_X) { isGoalProcessed = true; score[0]++; goalMsg = {text: msgLib[Math.floor(Math.random()*msgLib.length)], timer:120}; sendToAll({type:'goal', text:goalMsg.text, score}); setTimeout(resetPos, 2000); }
             }
             movePlayer(players[0], keys); 
             for(let i=1; i<activeCount; i++) if(allRemoteKeys[i]) movePlayer(players[i], allRemoteKeys[i]);
-            
-            // Attrito ridotto del 3% (da 0.988 a 0.98836)
-            let friction = 0.98836;
-            ball.vx *= friction; ball.vy *= friction; ball.x += ball.vx; ball.y += ball.vy;
-
-            if (ball.isPowered && Math.abs(ball.vx) + Math.abs(ball.vy) < 0.2) {
-                ball.isPowered = false;
-            }
-
+            if(botGK.active) moveBotGK();
+            ball.vx *= 0.98836; ball.vy *= 0.98836; ball.x += ball.vx; ball.y += ball.vy;
+            if (ball.isPowered && Math.abs(ball.vx) + Math.abs(ball.vy) < 0.2) ball.isPowered = false;
             for(let i=0; i<activeCount; i++) { 
                 for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); 
                 resolve(players[i], ball); 
                 posts.forEach(post => resolve(post, players[i], true));
             }
+            if(botGK.active) { resolve(botGK, ball); players.forEach(p => resolve(botGK, p)); posts.forEach(post => resolve(post, botGK, true)); }
             posts.forEach(p => resolve(p, ball, true));
         }
         checkLimits(ball, true); for(let i=0; i<activeCount; i++) checkLimits(players[i], false);
-        
+        if(botGK.active) checkLimits(botGK, false);
         if (t - lastSync > 16) { 
-            sendToAll({ type: 'sync', ball: ball, players: players.slice(0, activeCount), score: score }); 
+            sendToAll({ type: 'sync', ball: ball, players: players.slice(0, activeCount), score: score, botGK: botGK }); 
             lastSync = t; 
         }
     }
@@ -287,6 +365,7 @@ function draw() {
     const now = Date.now();
     ctx.fillStyle = "#2e7d32"; ctx.fillRect(0, 0, W, TOTAL_H);
     if (bannerLoaded) ctx.drawImage(topImage, 0, 0, W, OFFSET_TOP);
+    
     const fW = W - 90, stripeW = fW / 9;
     for (let i = 0; i < 9; i++) { ctx.fillStyle = (i % 2 === 0) ? "#2e7d32" : "#388e3c"; ctx.fillRect(45 + (i * stripeW), OFFSET_TOP + 15, stripeW, H_GAME - 30); }
     ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 4;
@@ -294,7 +373,9 @@ function draw() {
     ctx.strokeRect(45, MID_Y_GAME-100, 80, 200); ctx.strokeRect(W-125, MID_Y_GAME-100, 80, 200);
     ctx.beginPath(); ctx.moveTo(MID_X, OFFSET_TOP+15); ctx.lineTo(MID_X, OFFSET_TOP + H_GAME - 15); ctx.stroke();
     ctx.beginPath(); ctx.arc(MID_X, MID_Y_GAME, 70, 0, Math.PI*2); ctx.stroke();
-    ctx.strokeStyle = "#FFF"; ctx.strokeRect(15, MID_Y_GAME-65, 30, 130); ctx.strokeRect(W-45, MID_Y_GAME-65, 30, 130);
+    ctx.strokeStyle = "#FFF"; 
+    ctx.strokeRect(15, MID_Y_GAME-GOAL_SIZE_HALF, 30, GOAL_SIZE_HALF*2); 
+    ctx.strokeRect(W-45, MID_Y_GAME-GOAL_SIZE_HALF, 30, GOAL_SIZE_HALF*2);
     posts.forEach(p => { ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill(); ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.stroke(); });
 
     const myP = players[mySlot];
@@ -309,7 +390,7 @@ function draw() {
 
     for(let i=0; i<activeCount; i++) {
         const p = players[i]; if (p.x < -500) continue;
-        ctx.fillStyle = (i % 2 === 0) ? teamColors[0] : teamColors[1];
+        ctx.fillStyle = teamColors[p.team];
         ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI*2); ctx.fill();
         ctx.lineWidth = 4;
         ctx.strokeStyle = (now < p.boostEndTime) ? "#FFEB3B" : (p.kick > 0 ? "#FFF" : "#000");
@@ -319,12 +400,19 @@ function draw() {
         ctx.fillText("P" + (i + 1), p.x, p.y - p.r - 8);
     }
 
+    if (botGK.active) {
+        ctx.fillStyle = teamColors[botGK.team];
+        ctx.beginPath(); ctx.arc(botGK.x, botGK.y, botGK.r, 0, Math.PI*2); ctx.fill();
+        ctx.lineWidth = 3; ctx.strokeStyle = "#FFF"; 
+        ctx.stroke();
+        ctx.fillStyle = "white"; ctx.font = "bold 11px sans-serif";
+        ctx.fillText("Gk", botGK.x, botGK.y - botGK.r - 8);
+    }
+
     ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill(); 
-    ctx.strokeStyle = ball.isPowered ? "#00FFFF" : "#000";
-    ctx.lineWidth = ball.isPowered ? 4 : 1;
+    ctx.strokeStyle = ball.isPowered ? "#00FFFF" : "#000"; ctx.lineWidth = ball.isPowered ? 4 : 1;
     if(ball.isPowered) { ctx.shadowBlur = 15; ctx.shadowColor = "#00FFFF"; }
-    ctx.stroke();
-    ctx.shadowBlur = 0; 
+    ctx.stroke(); ctx.shadowBlur = 0; 
 
     if (goalMsg.timer > 0) { ctx.font = "bold 80px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "white"; ctx.fillText(goalMsg.text, MID_X, MID_Y_GAME); }
     document.getElementById('live-score').innerText = `${score[0]} - ${score[1]}`;
