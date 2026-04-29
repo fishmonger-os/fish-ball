@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FISHBALL 3vs3 - Goal Line GK</title>
+    <title>FISHBALL 3vs3 - Fixed Sync Edition</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -63,7 +63,6 @@ const MID_X = W / 2, MID_Y_GAME = OFFSET_TOP + (H_GAME / 2);
 const FIELD_MARGIN_X = 45;
 
 let players = Array.from({length: 6}, () => ({ x: -1000, y: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, boostEndTime: 0, boostReadyTime: 0, pwrReadyTime: 0 }));
-// Bot portiere migliorato nel posizionamento
 let botGK = { x: -1000, y: -1000, vx: 0, vy: 0, r: 16, m: 6, team: -1, active: false, targetY: MID_Y_GAME, reactionBuffer: [] }; 
 let ball = { x: MID_X, y: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1, isPowered: false };
 let score = [0, 0];
@@ -77,8 +76,12 @@ let connections = [], isHost = false, gameStarted = false, activeCount = 1, mySl
 
 peer.on('open', id => {
     const joinId = new URLSearchParams(window.location.search).get('join');
-    if (joinId) { isHost = false; const conn = peer.connect(joinId, { reliable: true }); setupGuest(conn); }
-    else {
+    if (joinId) { 
+        isHost = false; 
+        const conn = peer.connect(joinId, { reliable: true }); 
+        setupGuest(conn); 
+        document.getElementById('status-text').innerText = "Connessione all'host...";
+    } else {
         isHost = true; mySlot = 0;
         document.getElementById('status-text').innerHTML = "Link di invito:";
         document.getElementById('host-controls').style.display = 'flex';
@@ -90,19 +93,31 @@ peer.on('open', id => {
 });
 
 peer.on('connection', conn => {
-    conn.on('data', data => { 
-        if(data.type === 'join' && connections.length < 5) {
+    conn.on('open', () => {
+        if(connections.length < 5) {
             connections.push(conn);
             conn.send({ type: 'initSlot', slot: connections.length });
-            updateLobbySync();
+            updateLobbySync(); // Invia subito lo stato della lobby al nuovo connesso
         }
-        if(data.type === 'input') { const idx = connections.indexOf(conn) + 1; allRemoteKeys[idx] = data.keys; }
+    });
+    conn.on('data', data => { 
+        if(data.type === 'input') { 
+            const idx = connections.indexOf(conn) + 1; 
+            allRemoteKeys[idx] = data.keys; 
+        }
     });
 });
 
-function updateLobbySync() { if(!isHost) return; activeCount = connections.length + 1; refreshLobbyUI(); sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors, teams: playerTeams }); }
+function updateLobbySync() { 
+    if(!isHost) return; 
+    activeCount = connections.length + 1; 
+    refreshLobbyUI(); 
+    sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors, teams: playerTeams, gameStarted: gameStarted }); 
+}
+
 function refreshLobbyUI() {
-    const container = document.getElementById('player-list-container'); container.innerHTML = '';
+    const container = document.getElementById('player-list-container'); 
+    container.innerHTML = '';
     for(let i=0; i<6; i++) {
         const isActive = i < activeCount;
         const row = document.createElement('div');
@@ -111,18 +126,42 @@ function refreshLobbyUI() {
         container.appendChild(row);
     }
 }
+
 function changeTeam(idx) { playerTeams[idx] = playerTeams[idx] === 0 ? 1 : 0; updateLobbySync(); }
 
 function setupGuest(conn) {
     conn.on('data', data => {
-        if (data.type === 'initSlot') mySlot = data.slot;
-        if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; playerTeams = data.teams; refreshLobbyUI(); }
+        if (data.type === 'initSlot') {
+            mySlot = data.slot;
+            document.getElementById('status-text').innerText = "In lobby (P" + (mySlot+1) + ")";
+        }
+        if (data.type === 'lobbyUpdate') { 
+            activeCount = data.count + 1; 
+            teamColors = data.colors; 
+            playerTeams = data.teams; 
+            refreshLobbyUI();
+            if(data.gameStarted) {
+                gameStarted = true;
+                document.getElementById('menu-overlay').style.display = "none";
+            }
+        }
         if (data.type === 'start') { gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; }
         if (data.type === 'backToLobby') { gameStarted = false; document.getElementById('menu-overlay').style.display = "flex"; }
-        if (data.type === 'sync') { ball = data.ball; score = data.score; botGK = data.botGK; data.players.forEach((p, i) => { if(players[i]) Object.assign(players[i], p); }); }
+        if (data.type === 'sync') { 
+            ball = data.ball; 
+            score = data.score; 
+            botGK = data.botGK; 
+            data.players.forEach((p, i) => { if(players[i]) Object.assign(players[i], p); });
+            // Se riceviamo dati di gioco, nascondiamo l'overlay per sicurezza
+            if(gameStarted) document.getElementById('menu-overlay').style.display = "none";
+        }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; }
     });
-    function guestLoop() { if(conn.open) conn.send({type:'input', keys: getKeys()}); requestAnimationFrame(guestLoop); }
+    
+    function guestLoop() { 
+        if(conn.open) conn.send({type:'input', keys: getKeys()}); 
+        requestAnimationFrame(guestLoop); 
+    }
     guestLoop();
 }
 
@@ -161,24 +200,19 @@ function movePlayer(p, input) {
 
 function updateBotGK() {
     if (!botGK.active || goalMsg.timer > 0) return;
-    
-    // POSIZIONAMENTO ESATTO SULLA LINEA DI PORTA (Centro sulla linea X=45 o X=W-45)
     botGK.x = (botGK.team === 0) ? 45 : W - 45;
-    
     botGK.reactionBuffer.push(ball.y);
     if(botGK.reactionBuffer.length > 15) { 
         let dY = botGK.reactionBuffer.shift();
         let isBallInHalf = (botGK.team === 0) ? ball.x < MID_X : ball.x > MID_X;
         botGK.targetY = isBallInHalf ? dY : MID_Y_GAME;
     }
-    // Limitato tra i pali (65 pixel sopra/sotto il centro)
     botGK.targetY = Math.max(MID_Y_GAME - 55, Math.min(MID_Y_GAME + 55, botGK.targetY));
     botGK.vy = (botGK.targetY - botGK.y) * 0.12; 
     botGK.y += botGK.vy;
 
     let dx = ball.x - botGK.x, dy = ball.y - botGK.y, d = Math.sqrt(dx*dx + dy*dy);
     if (d < botGK.r + ball.r) { 
-        // Se la palla tocca il portiere, rimbalza via
         ball.vx = (dx/d) * 4.5; ball.vy = (dy/d) * 4.5; ball.isPowered = false; 
     }
 }
@@ -220,14 +254,31 @@ function resetPos() {
     botGK.active = (t1.length !== t2.length);
     if(botGK.active) {
         botGK.team = (t1.length < t2.length) ? 0 : 1;
-        botGK.x = (botGK.team === 0) ? 45 : W - 45; // Centro sulla linea
+        botGK.x = (botGK.team === 0) ? 45 : W - 45;
         botGK.y = MID_Y_GAME; botGK.reactionBuffer = [];
     } else { botGK.x = -1000; }
 }
 
-function startGame() { if(isHost){ score = [0, 0]; gameStarted = true; document.getElementById('menu-overlay').style.display="none"; resetPos(); sendToAll({type:'start'}); } }
+function startGame() { 
+    if(isHost){ 
+        score = [0, 0]; 
+        gameStarted = true; 
+        document.getElementById('menu-overlay').style.display="none"; 
+        resetPos(); 
+        sendToAll({type:'start'}); 
+    } 
+}
+
 function sendToAll(d) { connections.forEach(c => { if(c.open) c.send(d); }); }
-function backToLobby() { gameStarted = false; document.getElementById('menu-overlay').style.display = "flex"; if(isHost) { sendToAll({ type: 'backToLobby' }); updateLobbySync(); } }
+
+function backToLobby() { 
+    gameStarted = false; 
+    document.getElementById('menu-overlay').style.display = "flex"; 
+    if(isHost) { 
+        sendToAll({ type: 'backToLobby' }); 
+        updateLobbySync(); 
+    } 
+}
 
 function gameLoop() {
     if (isHost && gameStarted) {
@@ -248,7 +299,8 @@ function gameLoop() {
         sendToAll({ type: 'sync', ball, players: players.slice(0, activeCount), score, botGK });
     }
     if (goalMsg.timer > 0) goalMsg.timer--;
-    draw(); requestAnimationFrame(gameLoop);
+    draw(); 
+    requestAnimationFrame(gameLoop);
 }
 
 window.addEventListener('keydown', e => { rawKeys[e.code] = true; if(e.code === 'Escape') backToLobby(); });
