@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FISHBALL 3vs3 - No GK Edition</title>
+    <title>FISHBALL 3vs3 - Speed Edition</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -294,7 +294,7 @@ function gameLoop(t) {
             }
             movePlayer(players[0], keys); 
             for(let i=1; i<activeCount; i++) if(allRemoteKeys[i]) movePlayer(players[i], allRemoteKeys[i]);
-            ball.vx *= 0.98836; ball.vy *= 0.98836; ball.x += ball.vx; ball.y += ball.vy;
+            ball.vx *= 0.98894; ball.vy *= 0.98894; ball.x += ball.vx; ball.y += ball.vy;
             if (ball.isPowered && Math.abs(ball.vx) + Math.abs(ball.vy) < 0.2) ball.isPowered = false;
             for(let i=0; i<activeCount; i++) { 
                 for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); 
