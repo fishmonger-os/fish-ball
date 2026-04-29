@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>FISHBALL 3vs3 - Powershot Ground Edition</title>
+    <title>FISHBALL 3vs3 - No GK Edition</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #111; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -22,8 +22,6 @@
         #live-score { font-size: 3em; font-weight: 900; line-height: 1; }
         .timer-display { font-size: 1.2em; font-weight: bold; margin-bottom: 5px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
         input#link-input { background: #1a1a1a; color: #00ff00; border: 1px solid #333; padding: 10px; width: 90%; margin-top: 10px; cursor: pointer; border-radius: 5px; font-family: monospace; text-align: center; }
-        
-        /* Nuovi stili per i tasti squadra */
         .team-selector-btns { margin-top: 15px; display: flex; gap: 10px; justify-content: center; }
         .team-btn { padding: 8px 12px; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; color: white; font-size: 0.8em; }
         .btn-t1 { background: #800000; }
@@ -51,12 +49,10 @@
                 <div id="slot2" class="p-slot">P3</div> <div id="slot3" class="p-slot">P4</div>
                 <div id="slot4" class="p-slot">P5</div> <div id="slot5" class="p-slot">P6</div>
             </div>
-            
             <div id="host-team-controls" style="display:none;" class="team-selector-btns">
-                <button class="team-btn btn-t1" onclick="assignGuestsToTeam(0)">Guest in Team 1 (Rosso)</button>
-                <button class="team-btn btn-t2" onclick="assignGuestsToTeam(1)">Guest in Team 2 (Blu)</button>
+                <button class="team-btn btn-t1" onclick="assignGuestsToTeam(0)">Guest in Team 1</button>
+                <button class="team-btn btn-t2" onclick="assignGuestsToTeam(1)">Guest in Team 2</button>
             </div>
-
             <button id="start-btn" onclick="startGame()">GIOCA ORA</button>
         </div>
     </div>
@@ -79,8 +75,7 @@ const FIELD_MARGIN_X = 45;
 const GOAL_SIZE_HALF = 65 * 1.05; 
 
 let players = Array.from({length: 6}, () => ({ x: -1000, y: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, boostEndTime: 0, boostReadyTime: 0, pwrReadyTime: 0, team: 0 }));
-let playerTeams = [0, 1, 0, 1, 0, 1]; // Default alternato
-let botGK = { x: -1000, y: -1000, vx: 0, vy: 0, r: 10, m: 6, active: false, team: -1 };
+let playerTeams = [0, 1, 0, 1, 0, 1]; 
 let ball = { x: MID_X, y: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1, isPowered: false };
 let score = [0, 0];
 let goalMsg = { text: "", timer: 0 };
@@ -134,7 +129,6 @@ peer.on('connection', conn => {
 
 function assignGuestsToTeam(teamId) {
     if(!isHost) return;
-    // P1 (Host) resta fisso, gli altri vengono spostati
     for(let i=1; i<6; i++) playerTeams[i] = teamId;
     refreshLobbyState();
 }
@@ -162,9 +156,7 @@ function setupGuest(conn) {
         if (data.type === 'start') { gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; }
         if (data.type === 'backToLobby') { gameStarted = false; document.getElementById('menu-overlay').style.display = "flex"; }
         if (data.type === 'sync') { 
-            ball = data.ball; 
-            score = data.score; 
-            botGK = data.botGK;
+            ball = data.ball; score = data.score; 
             data.players.forEach((p, i) => { if(players[i]) Object.assign(players[i], p); }); 
         }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; playSound(0.4); }
@@ -227,7 +219,7 @@ function checkLimits(o, isBall) {
         } }
     } else {
         if (o.y < OFFSET_TOP + 15) o.y = OFFSET_TOP + 15; if (o.y > limitY) o.y = limitY;
-        if (o.x < 45 && !(o === botGK)) o.x = 45; if (o.x > W - 45 && !(o === botGK)) o.x = W - 45;
+        if (o.x < 45) o.x = 45; if (o.x > W - 45) o.x = W - 45;
     }
 }
 
@@ -239,30 +231,17 @@ function resetPos() {
         p.team = playerTeams[i];
     }); 
     
-    // Posizionamento in base alla squadra assegnata
     let t1Count = 0, t2Count = 0;
     for(let i=0; i<activeCount; i++) {
         if(players[i].team === 0) {
-            players[i].x = FIELD_MARGIN_X + 100 + (t1Count * 40);
-            players[i].y = MID_Y_GAME + (t1Count * 60 - 60);
+            players[i].x = FIELD_MARGIN_X + 120 + (t1Count * 30);
+            players[i].y = MID_Y_GAME + (t1Count * 70 - 70);
             t1Count++;
         } else {
-            players[i].x = W - FIELD_MARGIN_X - 100 - (t2Count * 40);
-            players[i].y = MID_Y_GAME + (t2Count * 60 - 60);
+            players[i].x = W - FIELD_MARGIN_X - 120 - (t2Count * 30);
+            players[i].y = MID_Y_GAME + (t2Count * 70 - 70);
             t2Count++;
         }
-    }
-
-    if (activeCount % 2 !== 0) {
-        botGK.active = true;
-        botGK.team = 1; 
-        if (activeCount === 3 || activeCount === 5) botGK.team = 1; 
-        botGK.x = (botGK.team === 0) ? 40 : 916;
-        botGK.y = MID_Y_GAME;
-        botGK.vy = 0;
-    } else {
-        botGK.active = false;
-        botGK.x = -1000;
     }
 }
 
@@ -305,26 +284,6 @@ function movePlayer(p, input) {
     if (p.kick > 0) p.kick--;
 }
 
-function moveBotGK() {
-    if(!botGK.active || goalMsg.timer > 0) return;
-    botGK.x = (botGK.team === 0) ? 40 : 916;
-    let distBallX = Math.abs(ball.x - botGK.x);
-    let targetY = MID_Y_GAME;
-    if (distBallX < 300) targetY = ball.y;
-    const minGoalY = MID_Y_GAME - (GOAL_SIZE_HALF - 12), maxGoalY = MID_Y_GAME + (GOAL_SIZE_HALF - 12);
-    if (targetY < minGoalY) targetY = minGoalY;
-    if (targetY > maxGoalY) targetY = maxGoalY;
-    botGK.vy += (targetY - botGK.y) * 0.012; 
-    botGK.vy *= 0.75;      
-    botGK.y += botGK.vy;
-    let dist = Math.sqrt((ball.x - botGK.x)**2 + (ball.y - botGK.y)**2);
-    if (dist < botGK.r + ball.r + 10) {
-        let dx = ball.x - botGK.x, ddy = ball.y - botGK.y, d = Math.sqrt(dx*dx + ddy*ddy);
-        ball.vx = (dx/d)*5; ball.vy = (ddy/d)*5;
-        playSound(0.1);
-    }
-}
-
 function gameLoop(t) {
     if (isHost && gameStarted) {
         updateInput(); 
@@ -335,7 +294,6 @@ function gameLoop(t) {
             }
             movePlayer(players[0], keys); 
             for(let i=1; i<activeCount; i++) if(allRemoteKeys[i]) movePlayer(players[i], allRemoteKeys[i]);
-            if(botGK.active) moveBotGK();
             ball.vx *= 0.98836; ball.vy *= 0.98836; ball.x += ball.vx; ball.y += ball.vy;
             if (ball.isPowered && Math.abs(ball.vx) + Math.abs(ball.vy) < 0.2) ball.isPowered = false;
             for(let i=0; i<activeCount; i++) { 
@@ -343,13 +301,11 @@ function gameLoop(t) {
                 resolve(players[i], ball); 
                 posts.forEach(post => resolve(post, players[i], true));
             }
-            if(botGK.active) { resolve(botGK, ball); players.forEach(p => resolve(botGK, p)); posts.forEach(post => resolve(post, botGK, true)); }
             posts.forEach(p => resolve(p, ball, true));
         }
         checkLimits(ball, true); for(let i=0; i<activeCount; i++) checkLimits(players[i], false);
-        if(botGK.active) checkLimits(botGK, false);
         if (t - lastSync > 16) { 
-            sendToAll({ type: 'sync', ball: ball, players: players.slice(0, activeCount), score: score, botGK: botGK }); 
+            sendToAll({ type: 'sync', ball: ball, players: players.slice(0, activeCount), score: score }); 
             lastSync = t; 
         }
     }
@@ -365,7 +321,6 @@ function draw() {
     const now = Date.now();
     ctx.fillStyle = "#2e7d32"; ctx.fillRect(0, 0, W, TOTAL_H);
     if (bannerLoaded) ctx.drawImage(topImage, 0, 0, W, OFFSET_TOP);
-    
     const fW = W - 90, stripeW = fW / 9;
     for (let i = 0; i < 9; i++) { ctx.fillStyle = (i % 2 === 0) ? "#2e7d32" : "#388e3c"; ctx.fillRect(45 + (i * stripeW), OFFSET_TOP + 15, stripeW, H_GAME - 30); }
     ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineWidth = 4;
@@ -398,15 +353,6 @@ function draw() {
         ctx.fillStyle = (i === mySlot) ? "yellow" : "white";
         ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center";
         ctx.fillText("P" + (i + 1), p.x, p.y - p.r - 8);
-    }
-
-    if (botGK.active) {
-        ctx.fillStyle = teamColors[botGK.team];
-        ctx.beginPath(); ctx.arc(botGK.x, botGK.y, botGK.r, 0, Math.PI*2); ctx.fill();
-        ctx.lineWidth = 3; ctx.strokeStyle = "#FFF"; 
-        ctx.stroke();
-        ctx.fillStyle = "white"; ctx.font = "bold 11px sans-serif";
-        ctx.fillText("Gk", botGK.x, botGK.y - botGK.r - 8);
     }
 
     ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI*2); ctx.fill(); 
