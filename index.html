@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>FISHBALL 3vs3 - Glow Optimized</title>
+    <title>FISHBALL 3vs3 - Golden Shot</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -40,8 +40,12 @@
         .color-dot { width: 22px; height: 22px; border-radius: 4px; cursor: pointer; border: 2px solid transparent; transition: 0.2s; }
         .color-dot.active { border-color: white; transform: scale(1.15); box-shadow: 0 0 12px rgba(255,255,255,0.4); }
         
+        /* Stili aggiornati per la selezione manuale delle squadre */
         .player-status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 15px 0; font-size: 0.9em; color: #666; }
-        .p-slot.active { color: #4CAF50; font-weight: bold; }
+        .p-slot { cursor: pointer; transition: 0.3s; padding: 8px; border-radius: 8px; border: 1px solid transparent; }
+        .p-slot.active { color: #fff; font-weight: bold; }
+        .p-slot.team-0 { border-left: 5px solid #FF0000; background: rgba(255,0,0,0.15); }
+        .p-slot.team-1 { border-left: 5px solid #0000FF; background: rgba(0,0,255,0.15); }
         
         #fs-btn { display: none; background: #2196F3; color: white; border: none; padding: 12px 25px; font-size: 1em; cursor: pointer; border-radius: 30px; font-weight: bold; margin-bottom: 15px; text-transform: uppercase; width: 100%; }
         #start-btn { background: #4CAF50; color: white; border: none; padding: 15px 50px; font-size: 1.2em; cursor: pointer; border-radius: 30px; display: none; font-weight: bold; text-transform: uppercase; margin-top: 10px; }
@@ -76,10 +80,15 @@
                         <div class="color-grid" id="picker-t2"></div>
                     </div>
                 </div>
+                
+                <div style="font-size: 0.7em; margin-bottom: 5px; color: #aaa;">HOST: CLICCA SUI NOMI PER CAMBIARE SQUADRA</div>
                 <div class="player-status-grid">
-                    <div id="slot0" class="p-slot">P1 (HOST)</div> <div id="slot1" class="p-slot">P2</div>
-                    <div id="slot2" class="p-slot">P3</div> <div id="slot3" class="p-slot">P4</div>
-                    <div id="slot4" class="p-slot">P5</div> <div id="slot5" class="p-slot">P6</div>
+                    <div id="slot0" class="p-slot team-0" onclick="togglePlayerTeam(0)">P1 (HOST)</div> 
+                    <div id="slot1" class="p-slot team-1" onclick="togglePlayerTeam(1)">P2</div>
+                    <div id="slot2" class="p-slot team-0" onclick="togglePlayerTeam(2)">P3</div> 
+                    <div id="slot3" class="p-slot team-1" onclick="togglePlayerTeam(3)">P4</div>
+                    <div id="slot4" class="p-slot team-0" onclick="togglePlayerTeam(4)">P5</div> 
+                    <div id="slot5" class="p-slot team-1" onclick="togglePlayerTeam(5)">P6</div>
                 </div>
                 <button id="start-btn" onclick="startGame()">GIOCA ORA</button>
             </div>
@@ -107,13 +116,6 @@ function toggleFullscreen() {
         else if (document.webkitExitFullscreen) { document.webkitExitFullscreen(); }
     }
 }
-
-const handleFSChange = () => {
-    const isFS = document.fullscreenElement || document.webkitFullscreenElement;
-    document.getElementById('fs-btn').innerText = isFS ? "ESCI DA FULLSCREEN" : "VAI FULLSCREEN (MOBILE)";
-};
-document.addEventListener('fullscreenchange', handleFSChange);
-document.addEventListener('webkitfullscreenchange', handleFSChange);
 
 const PRESET_COLORS = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#008000', '#800000', '#000080', '#808000', '#FFFFFF', '#808080', '#000000', '#A52A2A'];
 let teamColors = [PRESET_COLORS[0], PRESET_COLORS[2]];
@@ -183,6 +185,12 @@ peer.on('connection', conn => {
     });
 });
 
+function togglePlayerTeam(index) {
+    if (!isHost) return;
+    playerTeams[index] = playerTeams[index] === 0 ? 1 : 0;
+    refreshLobbyState();
+}
+
 function refreshLobbyState() { 
     if(!isHost) return; 
     activeCount = connections.length + 1; 
@@ -190,7 +198,14 @@ function refreshLobbyState() {
     sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors, teams: playerTeams }); 
 }
 
-function updateLobbySlots() { for(let i=0; i<6; i++) { const el = document.getElementById('slot'+i); (i < activeCount) ? el.classList.add('active') : el.classList.remove('active'); } }
+function updateLobbySlots() { 
+    for(let i=0; i<6; i++) { 
+        const el = document.getElementById('slot'+i); 
+        (i < activeCount) ? el.classList.add('active') : el.classList.remove('active');
+        el.className = 'p-slot' + (i < activeCount ? ' active' : '') + (playerTeams[i] === 0 ? ' team-0' : ' team-1');
+    } 
+}
+
 function sendToAll(d) { connections.forEach(c => { if(c.open) c.send(d); }); }
 
 function setupGuest(conn) {
@@ -238,8 +253,6 @@ function startGame() {
             players[i].team = playerTeams[i];
             if(playerTeams[i] === 0) matchOrderT1.push(i); else matchOrderT2.push(i);
         }
-        matchOrderT1.sort(() => Math.random() - 0.5);
-        matchOrderT2.sort(() => Math.random() - 0.5);
         resetPos(true);
         sendToAll({type:'start'}); 
     } 
@@ -397,20 +410,33 @@ function draw() {
     ctx.globalCompositeOperation = 'lighter';
     for (const tr of trails) { ctx.globalAlpha = tr.life * 0.3; ctx.fillStyle = tr.color; ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r * (0.5 + tr.life * 0.5), 0, 6.28); ctx.fill(); }
     
-    // BAGLIORE RADIALE PALLA (Trasparenza ridotta come richiesto)
-    if (ball.isPowered) {
-        const gradR = ball.r * 1.7; 
-        const grad = ctx.createRadialGradient(ball.x, ball.y, 0, ball.x, ball.y, gradR);
-        grad.addColorStop(0, 'rgba(255, 255, 255, 0.9)');
-        grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(ball.x, ball.y, gradR, 0, 6.28);
-        ctx.fill();
-    }
-    
     ctx.globalAlpha = 1.0;
     ctx.globalCompositeOperation = 'source-over';
+
+    ctx.shadowBlur = 0; 
+    ctx.lineWidth = 4;
+    for(let i=0; i<activeCount; i++) {
+        const p = players[i]; if (p.x < -500) continue;
+        ctx.fillStyle = teamColors[p.team]; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill();
+        ctx.strokeStyle = (p.kick > 0 ? "#FFF" : "#000"); ctx.stroke();
+        ctx.fillStyle = (i === mySlot) ? "yellow" : "white"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center"; ctx.fillText("P" + (i + 1), p.x, p.y - p.r - 8);
+    }
+
+    if (ball.isPowered) {
+        const gradR = ball.r * 1.8;
+        const grad = ctx.createRadialGradient(ball.x, ball.y, 0, ball.x, ball.y, gradR);
+        grad.addColorStop(0, 'rgba(255, 255, 255, 1)');      
+        grad.addColorStop(0.3, 'rgba(255, 223, 0, 1)');    
+        grad.addColorStop(0.7, 'rgba(218, 165, 32, 0.7)'); 
+        grad.addColorStop(1, 'rgba(218, 165, 32, 0)');     
+        ctx.fillStyle = grad; ctx.beginPath(); ctx.arc(ball.x, ball.y, gradR, 0, 6.28); ctx.fill();
+        ctx.shadowBlur = 15; ctx.shadowColor = "#FFD700";
+    }
+
+    ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.28); ctx.fill(); 
+    ctx.strokeStyle = "#000"; ctx.lineWidth = 1; ctx.stroke();
+
+    ctx.shadowBlur = 0;
 
     const myP = players[mySlot];
     if (myP) {
@@ -420,18 +446,6 @@ function draw() {
         document.getElementById('timer-boost').style.color = (bRem > 0) ? "#FFEB3B" : "#4CAF50";
         document.getElementById('timer-pwr').style.color = (pRem > 0) ? "#00FFFF" : "#4CAF50";
     }
-
-    ctx.lineWidth = 4;
-    for(let i=0; i<activeCount; i++) {
-        const p = players[i]; if (p.x < -500) continue;
-        ctx.fillStyle = teamColors[p.team]; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill();
-        ctx.strokeStyle = (p.kick > 0 ? "#FFF" : "#000"); ctx.stroke();
-        ctx.fillStyle = (i === mySlot) ? "yellow" : "white"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center"; ctx.fillText("P" + (i + 1), p.x, p.y - p.r - 8);
-    }
-
-    // DISEGNO PALLA
-    ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.28); ctx.fill(); 
-    ctx.strokeStyle = "#000"; ctx.lineWidth = 1; ctx.stroke();
 
     if (goalMsg.timer > 0) { ctx.font = "bold 80px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "white"; ctx.fillText(goalMsg.text, MID_X, MID_Y_GAME); }
     document.getElementById('live-score').innerText = score[0] + " - " + score[1];
