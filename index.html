@@ -144,7 +144,7 @@ let players = Array.from({length: 6}, () => ({
     boostEndTime: 0, boostReadyTime: 0, pwrReadyTime: 0, 
     team: 0, isPlayer: true 
 }));
-let trails = []; 
+
 let playerTeams = [0, 1, 0, 1, 0, 1]; 
 let matchOrderT1 = [0, 2, 4];
 let matchOrderT2 = [1, 3, 5];
@@ -331,7 +331,6 @@ function checkLimits(o, isBall) {
 function resetPos(fullReset = false) {
     isGoalProcessed = false; 
     ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1, isPlayer: false };
-    trails.length = 0;
     for(let i=0; i<6; i++) { players[i].vx = 0; players[i].vy = 0; players[i].boostReadyTime = 0; players[i].boostEndTime = 0; if(fullReset) { players[i].pwrReadyTime = 0; } }
     const spacing = 110;
     const getSY = (idx, count) => MID_Y_GAME + (idx - (count - 1) / 2) * spacing;
@@ -393,8 +392,6 @@ function gameLoop(t) {
         for(let i=0; i<activeCount; i++) { if (players[i].tx > -500) { players[i].x += (players[i].tx - players[i].x) * lerpFactor; players[i].y += (players[i].ty - players[i].y) * lerpFactor; } }
     }
     if (goalMsg.timer > 0) goalMsg.timer--;
-    for(let i=0; i<activeCount; i++){ const p = players[i]; if(p.x > -500 && oraCorrente < p.boostEndTime) trails.push({ x: p.x, y: p.y, r: p.r, color: teamColors[p.team*2], life: 1.0 }); }
-    for (let i = trails.length - 1; i >= 0; i--) { trails[i].life -= 0.05; if (trails[i].life <= 0) trails.splice(i, 1); }
     draw(); requestAnimationFrame(gameLoop);
 }
 
@@ -405,9 +402,6 @@ function draw() {
     const ctx = document.getElementById('gameCanvas').getContext('2d');
     const now = Date.now();
     ctx.clearRect(0, 0, W, TOTAL_H);
-    ctx.globalCompositeOperation = 'lighter';
-    for (const tr of trails) { ctx.globalAlpha = tr.life * 0.3; ctx.fillStyle = tr.color; ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r * (0.5 + tr.life * 0.5), 0, 6.28); ctx.fill(); }
-    ctx.globalAlpha = 1.0; ctx.globalCompositeOperation = 'source-over';
     for(let i=0; i<activeCount; i++) {
         const p = players[i]; if (p.x < -500) continue;
         ctx.fillStyle = teamColors[p.team * 2]; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill();
