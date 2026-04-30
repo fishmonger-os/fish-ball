@@ -152,7 +152,17 @@ function setupGuest(conn) {
     conn.on('data', data => {
         if (data.type === 'initSlot') mySlot = data.slot;
         if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; playerTeams = data.teams; refreshLobbyState(); }
-        if (data.type === 'start') { gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; document.getElementById('esc-btn').style.display = "flex"; }
+        if (data.type === 'start') { 
+            gameStarted = true; 
+            document.getElementById('menu-overlay').style.display = "none"; 
+            document.getElementById('esc-btn').style.display = "flex"; 
+            // Applica l'assegnazione squadre inviata dall'host
+            if(data.finalTeams) {
+                data.finalTeams.forEach((teamId, i) => {
+                    if(players[i]) players[i].team = teamId;
+                });
+            }
+        }
         if (data.type === 'stop') backToLobby();
         if (data.type === 'sync') { ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score; data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].boostEndTime = p.boostEndTime; players[i].boostReadyTime = p.boostReadyTime; players[i].pwrReadyTime = p.pwrReadyTime; } }); }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; }
@@ -161,10 +171,40 @@ function setupGuest(conn) {
     inputLoop(); requestAnimationFrame(gameLoop);
 }
 
-function startGame() { if(isHost){ score=[0,0]; gameStarted=true; document.getElementById('menu-overlay').style.display="none"; document.getElementById('esc-btn').style.display="flex"; matchOrderT1=[]; matchOrderT2=[]; for(let i=0; i<activeCount; i++) { players[i].team=playerTeams[i]; if(playerTeams[i]===0) matchOrderT1.push(i); else matchOrderT2.push(i); } resetPos(true); sendToAll({type:'start'}); } }
+function startGame() { 
+    if(isHost){ 
+        score=[0,0]; 
+        gameStarted=true; 
+        document.getElementById('menu-overlay').style.display="none"; 
+        document.getElementById('esc-btn').style.display="flex"; 
+        matchOrderT1=[]; 
+        matchOrderT2=[]; 
+        // Aggiorna team locali prima di avviare
+        for(let i=0; i<6; i++) { 
+            players[i].team = playerTeams[i];
+            if(i < activeCount) {
+                if(playerTeams[i]===0) matchOrderT1.push(i); 
+                else matchOrderT2.push(i);
+            }
+        } 
+        resetPos(true); 
+        // Invia comando start includendo la mappa delle squadre
+        sendToAll({type:'start', finalTeams: playerTeams}); 
+    } 
+}
+
 function backToLobby() { gameStarted = false; document.getElementById('menu-overlay').style.display = "flex"; document.getElementById('esc-btn').style.display = "none"; if(isHost) { sendToAll({type: 'stop'}); refreshLobbyState(); } }
 function sendToAll(d) { connections.forEach(c => { if(c.open) c.send(d); }); }
-function refreshLobbyState() { if(!isHost)return; activeCount = connections.length + 1; for(let i=0; i<6; i++) { const el = document.getElementById('slot'+i); el.className = 'p-slot' + (i < activeCount ? ' active' : '') + (playerTeams[i] === 0 ? ' team-0' : ' team-1'); } sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors, teams: playerTeams }); }
+
+function refreshLobbyState() { 
+    if(!isHost) return; 
+    activeCount = connections.length + 1; 
+    for(let i=0; i<6; i++) { 
+        const el = document.getElementById('slot'+i); 
+        el.className = 'p-slot' + (i < activeCount ? ' active' : '') + (playerTeams[i] === 0 ? ' team-0' : ' team-1'); 
+    } 
+    sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors, teams: playerTeams }); 
+}
 
 function checkLimits(o, isBall) { 
     const limitYTop = OFFSET_TOP + 15, limitYBottom = OFFSET_TOP + H_GAME - 15; 
