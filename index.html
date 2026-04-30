@@ -189,6 +189,8 @@ function startGame() {
         document.getElementById('menu-overlay').style.display="none"; 
         matchOrderT1 = []; matchOrderT2 = [];
         for(let i=0; i<activeCount; i++) {
+            // CORREZIONE: Assegnazione esplicita del team all'oggetto player
+            players[i].team = playerTeams[i];
             if(playerTeams[i] === 0) matchOrderT1.push(i); else matchOrderT2.push(i);
         }
         matchOrderT1.sort(() => Math.random() - 0.5);
@@ -347,7 +349,6 @@ function gameLoop(t) {
     }
     if (goalMsg.timer > 0) goalMsg.timer--;
 
-    // Aggiornamento Scie (Ottimizzato)
     for(let i=0; i<activeCount; i++){ const p = players[i]; if(p.x > -500 && oraCorrente < p.boostEndTime) trails.push({ x: p.x, y: p.y, r: p.r, color: teamColors[p.team], life: 1.0 }); }
     for (let i = trails.length - 1; i >= 0; i--) { trails[i].life -= 0.05; if (trails[i].life <= 0) trails.splice(i, 1); }
     
@@ -366,7 +367,6 @@ function draw() {
     const now = Date.now();
     ctx.clearRect(0, 0, W, TOTAL_H);
     
-    // Disegno Scie (Lighter mode per performance e resa)
     ctx.globalCompositeOperation = 'lighter';
     for (const tr of trails) { ctx.globalAlpha = tr.life * 0.3; ctx.fillStyle = tr.color; ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r * (0.5 + tr.life * 0.5), 0, 6.28); ctx.fill(); }
     for (const tr of ballTrails) { ctx.globalAlpha = tr.life * 0.4; ctx.fillStyle = "#FFFFFF"; ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r * (tr.life * 0.8), 0, 6.28); ctx.fill(); }
@@ -393,7 +393,6 @@ function draw() {
         ctx.fillStyle = (i === mySlot) ? "yellow" : "white"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center"; ctx.fillText("P" + (i + 1), p.x, p.y - p.r - 8);
     }
 
-    // PALLA (Nitida e dimensione reale)
     ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.28); ctx.fill(); 
     ctx.strokeStyle = ball.isPowered ? "#FFF" : "#000"; ctx.lineWidth = ball.isPowered ? 2 : 1; ctx.stroke();
 
