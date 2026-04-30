@@ -24,11 +24,18 @@
         .color-dot.active { border-color: white; transform: scale(1.15); box-shadow: 0 0 12px rgba(255,255,255,0.4); }
         .player-status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 15px 0; font-size: 0.9em; color: #666; }
         .p-slot.active { color: #4CAF50; font-weight: bold; }
+        
+        /* Fullscreen Button Mobile */
+        #fs-btn { display: none; background: #2196F3; color: white; border: none; padding: 12px 25px; font-size: 1em; cursor: pointer; border-radius: 30px; font-weight: bold; margin-bottom: 15px; text-transform: uppercase; width: 100%; }
+
         #start-btn { background: #4CAF50; color: white; border: none; padding: 15px 50px; font-size: 1.2em; cursor: pointer; border-radius: 30px; display: none; font-weight: bold; text-transform: uppercase; margin-top: 10px; }
         .ui-bottom-right { position: absolute; bottom: 5%; right: 5%; text-align: right; pointer-events: none; z-index: 5; font-family: monospace; }
         #live-score { font-size: 3.5em; font-weight: 900; line-height: 1; text-shadow: 2px 2px 8px rgba(0,0,0,0.7); }
         .timer-display { font-size: 1.3em; font-weight: bold; margin-bottom: 5px; text-shadow: 2px 2px 4px rgba(0,0,0,0.5); }
         input#link-input { background: #1a1a1a; color: #00ff00; border: 1px solid #333; padding: 10px; width: 90%; margin-top: 10px; cursor: pointer; border-radius: 5px; font-family: monospace; text-align: center; }
+        
+        #game-container:fullscreen { width: 100vw; height: 100vh; background: #000; }
+        #game-container:-webkit-full-screen { width: 100vw; height: 100vh; background: #000; }
     </style>
 </head>
 <body>
@@ -40,7 +47,10 @@
         <div id="menu-overlay">
             <div class="lobby-box">
                 <h1 style="margin:0; color:#4CAF50; letter-spacing: 2px;">FISHBALL 3vs3</h1>
-                <div id="status-text">Generazione ID...</div>
+                <div id="status-text" style="margin-bottom: 15px;">Generazione ID...</div>
+                
+                <button id="fs-btn" onclick="toggleFullscreen()">VAI FULLSCREEN</button>
+
                 <div class="team-settings" id="host-controls" style="display:none;">
                     <div class="team-box">
                         <div style="font-size: 0.8em; opacity: 0.7;">SQUADRA 1</div>
@@ -73,11 +83,31 @@ const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/
 if (isMobile) {
     const canvases = document.querySelectorAll('canvas');
     canvases.forEach(c => c.classList.add('mobile-widescreen'));
-    // Opzionale: Suggerimento rotazione se in portrait
+    document.getElementById('fs-btn').style.display = "block";
     if (window.innerHeight > window.innerWidth) {
-        alert("Ruota il telefono in orizzontale per una visuale migliore!");
+        alert("Ruota il telefono in orizzontale!");
     }
 }
+
+function toggleFullscreen() {
+    const container = document.getElementById('game-container');
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        if (container.requestFullscreen) { container.requestFullscreen(); }
+        else if (container.webkitRequestFullscreen) { container.webkitRequestFullscreen(); }
+        document.getElementById('fs-btn').innerText = "ESCI FULLSCREEN";
+    } else {
+        if (document.exitFullscreen) { document.exitFullscreen(); }
+        else if (document.webkitExitFullscreen) { document.webkitExitFullscreen(); }
+        document.getElementById('fs-btn').innerText = "VAI FULLSCREEN";
+    }
+}
+
+document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement) document.getElementById('fs-btn').innerText = "VAI FULLSCREEN";
+});
+document.addEventListener('webkitfullscreenchange', () => {
+    if (!document.webkitFullscreenElement) document.getElementById('fs-btn').innerText = "VAI FULLSCREEN";
+});
 
 const PRESET_COLORS = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#008000', '#800000', '#000080', '#808000', '#FFFFFF', '#808080', '#000000', '#A52A2A'];
 let teamColors = [PRESET_COLORS[0], PRESET_COLORS[2]];
@@ -365,7 +395,14 @@ function draw() {
     
     ctx.globalCompositeOperation = 'lighter';
     for (const tr of trails) { ctx.globalAlpha = tr.life * 0.3; ctx.fillStyle = tr.color; ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r * (0.5 + tr.life * 0.5), 0, 6.28); ctx.fill(); }
-    for (const tr of ballTrails) { ctx.globalAlpha = tr.life * 0.5; ctx.fillStyle = "#FFFB00"; ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r * tr.life, 0, 6.28); ctx.fill(); }
+    
+    for (const tr of ballTrails) { 
+        ctx.globalAlpha = tr.life * 0.4; 
+        ctx.fillStyle = "rgba(255, 255, 255, 0.4)"; 
+        ctx.beginPath(); 
+        ctx.arc(tr.x, tr.y, tr.r * (0.8 + tr.life * 0.4), 0, 6.28); 
+        ctx.fill(); 
+    }
     
     ctx.globalAlpha = 1.0;
     ctx.globalCompositeOperation = 'source-over';
@@ -388,7 +425,7 @@ function draw() {
     }
 
     ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.28); ctx.fill(); 
-    ctx.strokeStyle = ball.isPowered ? "#FFFB00" : "#000"; ctx.lineWidth = ball.isPowered ? 3 : 1; ctx.stroke();
+    ctx.strokeStyle = ball.isPowered ? "rgba(255,255,255,0.8)" : "#000"; ctx.lineWidth = ball.isPowered ? 3 : 1; ctx.stroke();
 
     if (goalMsg.timer > 0) { ctx.font = "bold 80px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "white"; ctx.fillText(goalMsg.text, MID_X, MID_Y_GAME); }
     document.getElementById('live-score').innerText = score[0] + " - " + score[1];
