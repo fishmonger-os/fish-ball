@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>FISHBALL 3vs3 - Complete Edition</title>
+    <title>FISHBALL 3vs3 - Fixed Sync</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -120,7 +120,11 @@ let connections = [];
 
 peer.on('open', id => {
     const joinId = new URLSearchParams(window.location.search).get('join');
-    if (joinId) { isHost = false; setupGuest(peer.connect(joinId, { reliable: true })); }
+    if (joinId) { 
+        isHost = false; 
+        document.getElementById('status-text').innerText = "Connessione in corso...";
+        setupGuest(peer.connect(joinId, { reliable: true })); 
+    }
     else { 
         isHost = true; 
         document.getElementById('status-text').innerHTML = `Link:<br><input type="text" id="link-input" value="${window.location.origin + window.location.pathname}?join=${id}" readonly onclick="this.select(); document.execCommand('copy');">`; 
@@ -144,6 +148,10 @@ peer.on('connection', conn => {
 });
 
 function setupGuest(conn) {
+    conn.on('open', () => {
+        conn.send({ type: 'join' }); // Invia il segnale di join all'host appena la connessione è aperta[cite: 1]
+        document.getElementById('status-text').innerText = "In Lobby (GUEST)";
+    });
     conn.on('data', data => {
         if (data.type === 'initSlot') { mySlot = data.slot; teamColors = data.colors; playerTeams = data.teams; refreshLobbyState(); }
         if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; playerTeams = data.teams; refreshLobbyState(); }
