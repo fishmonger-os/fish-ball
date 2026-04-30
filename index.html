@@ -2,7 +2,7 @@
 <html lang="it">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>FISHBALL 3vs3 - Performance Edition</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
@@ -11,6 +11,10 @@
         canvas { position: absolute; width: 100%; height: 100%; object-fit: contain; }
         #bgCanvas { z-index: 1; background-color: #2e7d32; border: 2px solid #222; }
         #gameCanvas { z-index: 2; }
+        
+        /* Stili Mobile Widescreen */
+        .mobile-widescreen { width: 100vw !important; height: auto !important; aspect-ratio: 956 / 720; }
+        
         #menu-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(5px); }
         .lobby-box { background: #222; padding: 30px; border-radius: 20px; border: 1px solid #444; text-align: center; min-width: 450px; }
         .team-settings { display: flex; justify-content: space-around; margin: 20px 0; gap: 15px; }
@@ -64,6 +68,17 @@
     </div>
 
 <script>
+// CONTROLLO MOBILE WIDESCREEN
+const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+if (isMobile) {
+    const canvases = document.querySelectorAll('canvas');
+    canvases.forEach(c => c.classList.add('mobile-widescreen'));
+    // Opzionale: Suggerimento rotazione se in portrait
+    if (window.innerHeight > window.innerWidth) {
+        alert("Ruota il telefono in orizzontale per una visuale migliore!");
+    }
+}
+
 const PRESET_COLORS = ['#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF', '#FFA500', '#800080', '#008000', '#800000', '#000080', '#808000', '#FFFFFF', '#808080', '#000000', '#A52A2A'];
 let teamColors = [PRESET_COLORS[0], PRESET_COLORS[2]];
 const W = 956, OFFSET_TOP = 130, TOTAL_H = 720;
@@ -76,7 +91,7 @@ let players = Array.from({length: 6}, () => ({
     x: -1000, y: -1000, tx: -1000, ty: -1000, 
     vx: 0, vy: 0, r: 16, m: 6, kick: 0, 
     boostEndTime: 0, boostReadyTime: 0, pwrReadyTime: 0, 
-    rockyUntil: 0, team: 0, isPlayer: true 
+    team: 0, isPlayer: true 
 }));
 let trails = []; 
 let ballTrails = []; 
@@ -91,9 +106,6 @@ const msgLib = ["GOOOOL!", "BOMBER!", "CHAPEAU!", "RETE!"];
 const keys = { ax: 0, ay: 0, kick: false, boost: false, pwr: false };
 let allRemoteKeys = {}; const rawKeys = {};
 const posts = [{x:45, y:MID_Y_GAME-GOAL_SIZE_HALF, r:5.6}, {x:45, y:MID_Y_GAME+GOAL_SIZE_HALF, r:5.6}, {x:W-45, y:MID_Y_GAME-GOAL_SIZE_HALF, r:5.6}, {x:W-45, y:MID_Y_GAME+GOAL_SIZE_HALF, r:5.6}];
-
-let powerUp = { x: -1000, y: -1000, active: false, r: 10 };
-let lastPowerUpSpawn = Date.now();
 
 let topImage = new Image(); 
 let bannerLoaded = false;
@@ -161,8 +173,7 @@ function setupGuest(conn) {
         if (data.type === 'sync') { 
             ball.tx = data.ball.x; ball.ty = data.ball.y; ball.isPowered = data.ball.isPowered;
             score = data.score; 
-            powerUp = data.powerUp;
-            data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].boostEndTime = p.boostEndTime; players[i].boostReadyTime = p.boostReadyTime; players[i].pwrReadyTime = p.pwrReadyTime; players[i].rockyUntil = p.rockyUntil; players[i].team = p.team; } }); 
+            data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].boostEndTime = p.boostEndTime; players[i].boostReadyTime = p.boostReadyTime; players[i].pwrReadyTime = p.pwrReadyTime; players[i].team = p.team; } }); 
         }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; playSound(0.4); }
     });
@@ -189,13 +200,11 @@ function startGame() {
         document.getElementById('menu-overlay').style.display="none"; 
         matchOrderT1 = []; matchOrderT2 = [];
         for(let i=0; i<activeCount; i++) {
-            // CORREZIONE: Assegnazione esplicita del team all'oggetto player
             players[i].team = playerTeams[i];
             if(playerTeams[i] === 0) matchOrderT1.push(i); else matchOrderT2.push(i);
         }
         matchOrderT1.sort(() => Math.random() - 0.5);
         matchOrderT2.sort(() => Math.random() - 0.5);
-        lastPowerUpSpawn = Date.now();
         resetPos(true);
         sendToAll({type:'start'}); 
     } 
@@ -230,19 +239,14 @@ function resolve(c1, c2, isPost = false) {
     let dx = c2.x - c1.x, dy = c2.y - c1.y, dist = Math.sqrt(dx*dx + dy*dy);
     if (dist < c1.r + c2.r && dist > 0) {
         let nx = dx / dist, ny = dy / dist, overlap = (c1.r + c2.r) - dist;
-        let forceMult = 1.0;
-        const now = Date.now();
-        if (!isPost && c1.isPlayer && c2.isPlayer) {
-            if (c1.rockyUntil > now || c2.rockyUntil > now) forceMult = 4.0;
-        }
         if (isPost) { c2.x += nx * overlap; c2.y += ny * overlap; }
         else { c1.x -= nx * overlap * 0.5; c1.y -= ny * overlap * 0.5; c2.x += nx * overlap * 0.5; c2.y += ny * overlap * 0.5; }
         let dot = (c2.vx - (isPost ? 0 : c1.vx))*nx + (c2.vy - (isPost ? 0 : c1.vy))*ny;
         if (dot < 0) {
             let bounce = isPost ? 0.41 : 0.85; 
             let impulse = -(1 + bounce) * dot / (1/(isPost?100:c1.m) + 1/c2.m);
-            c2.vx += (impulse * nx * forceMult) / c2.m; c2.vy += (impulse * ny * forceMult) / c2.m;
-            if (!isPost) { c1.vx -= (impulse * nx * forceMult) / c1.m; c1.vy -= (impulse * ny * forceMult) / c1.m; }
+            c2.vx += (impulse * nx) / c2.m; c2.vy += (impulse * ny) / c2.m;
+            if (!isPost) { c1.vx -= (impulse * nx) / c1.m; c1.vy -= (impulse * ny) / c1.m; }
             if(c2 === ball || c1 === ball) ball.isPowered = false; 
         }
     }
@@ -273,10 +277,9 @@ function resetPos(fullReset = false) {
     isGoalProcessed = false; 
     ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1, isPowered: false, isPlayer: false };
     trails.length = 0; ballTrails.length = 0; 
-    powerUp.active = false; powerUp.x = -1000;
     for(let i=0; i<6; i++) {
         players[i].vx = 0; players[i].vy = 0;
-        players[i].boostReadyTime = 0; players[i].boostEndTime = 0; players[i].rockyUntil = 0;
+        players[i].boostReadyTime = 0; players[i].boostEndTime = 0;
         if(fullReset) { players[i].pwrReadyTime = 0; }
     }
     const spacing = 110;
@@ -322,13 +325,6 @@ function gameLoop(t) {
     if (isHost && gameStarted) {
         updateInput(); 
         if (goalMsg.timer <= 0) {
-            if (!powerUp.active && oraCorrente - lastPowerUpSpawn > 45000) { powerUp.x = MID_X; powerUp.y = MID_Y_GAME; powerUp.active = true; }
-            if (powerUp.active) {
-                for(let i=0; i<activeCount; i++) {
-                    let p = players[i]; let dx = p.x - powerUp.x, dy = p.y - powerUp.y;
-                    if (Math.sqrt(dx*dx + dy*dy) < p.r + powerUp.r) { p.rockyUntil = oraCorrente + 10000; powerUp.active = false; powerUp.x = -1000; lastPowerUpSpawn = oraCorrente; playSound(0.3); }
-                }
-            }
             if (!isGoalProcessed && ball.y > MID_Y_GAME - GOAL_SIZE_HALF && ball.y < MID_Y_GAME + GOAL_SIZE_HALF) {
                 if (ball.x < 45) { isGoalProcessed = true; score[1]++; goalMsg = {text: msgLib[Math.floor(Math.random()*msgLib.length)], timer:120}; sendToAll({type:'goal', text:goalMsg.text, score}); setTimeout(() => resetPos(false), 2000); }
                 else if (ball.x > W - 45) { isGoalProcessed = true; score[0]++; goalMsg = {text: msgLib[Math.floor(Math.random()*msgLib.length)], timer:120}; sendToAll({type:'goal', text:goalMsg.text, score}); setTimeout(() => resetPos(false), 2000); }
@@ -341,7 +337,7 @@ function gameLoop(t) {
             posts.forEach(p => resolve(p, ball, true));
             checkLimits(ball, true); for(let i=0; i<activeCount; i++) checkLimits(players[i], false);
         }
-        if (t - lastSync > 32) { sendToAll({ type: 'sync', ball, players: players.slice(0, activeCount), score: score, powerUp: powerUp }); lastSync = t; }
+        if (t - lastSync > 32) { sendToAll({ type: 'sync', ball, players: players.slice(0, activeCount), score: score }); lastSync = t; }
     } else if (!isHost && gameStarted) {
         const lerpFactor = 0.25; 
         ball.x += (ball.tx - ball.x) * lerpFactor; ball.y += (ball.ty - ball.y) * lerpFactor;
@@ -353,8 +349,8 @@ function gameLoop(t) {
     for (let i = trails.length - 1; i >= 0; i--) { trails[i].life -= 0.05; if (trails[i].life <= 0) trails.splice(i, 1); }
     
     if (ball.isPowered) ballTrails.push({ x: ball.x, y: ball.y, r: ball.r, life: 1.0 });
-    for (let i = ballTrails.length - 1; i >= 0; i--) { ballTrails[i].life -= 0.16; if (ballTrails[i].life <= 0) ballTrails.splice(i, 1); }
-    if (ballTrails.length > 15) ballTrails.shift();
+    for (let i = ballTrails.length - 1; i >= 0; i--) { ballTrails[i].life -= 0.1; if (ballTrails[i].life <= 0) ballTrails.splice(i, 1); }
+    if (ballTrails.length > 20) ballTrails.shift();
     
     draw(); requestAnimationFrame(gameLoop);
 }
@@ -369,11 +365,10 @@ function draw() {
     
     ctx.globalCompositeOperation = 'lighter';
     for (const tr of trails) { ctx.globalAlpha = tr.life * 0.3; ctx.fillStyle = tr.color; ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r * (0.5 + tr.life * 0.5), 0, 6.28); ctx.fill(); }
-    for (const tr of ballTrails) { ctx.globalAlpha = tr.life * 0.4; ctx.fillStyle = "#FFFFFF"; ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r * (tr.life * 0.8), 0, 6.28); ctx.fill(); }
+    for (const tr of ballTrails) { ctx.globalAlpha = tr.life * 0.5; ctx.fillStyle = "#FFFB00"; ctx.beginPath(); ctx.arc(tr.x, tr.y, tr.r * tr.life, 0, 6.28); ctx.fill(); }
+    
     ctx.globalAlpha = 1.0;
     ctx.globalCompositeOperation = 'source-over';
-
-    if (powerUp.active) { ctx.fillStyle = "rgba(0,0,255,0.5)"; ctx.beginPath(); ctx.arc(powerUp.x, powerUp.y, powerUp.r, 0, 6.28); ctx.fill(); }
 
     const myP = players[mySlot];
     if (myP) {
@@ -387,14 +382,13 @@ function draw() {
     ctx.lineWidth = 4;
     for(let i=0; i<activeCount; i++) {
         const p = players[i]; if (p.x < -500) continue;
-        if (p.rockyUntil > now) { ctx.strokeStyle = "#0000FF"; ctx.beginPath(); ctx.arc(p.x, p.y, p.r + 5, 0, 6.28); ctx.stroke(); }
         ctx.fillStyle = teamColors[p.team]; ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, 6.28); ctx.fill();
         ctx.strokeStyle = (p.kick > 0 ? "#FFF" : "#000"); ctx.stroke();
         ctx.fillStyle = (i === mySlot) ? "yellow" : "white"; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "center"; ctx.fillText("P" + (i + 1), p.x, p.y - p.r - 8);
     }
 
     ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.28); ctx.fill(); 
-    ctx.strokeStyle = ball.isPowered ? "#FFF" : "#000"; ctx.lineWidth = ball.isPowered ? 2 : 1; ctx.stroke();
+    ctx.strokeStyle = ball.isPowered ? "#FFFB00" : "#000"; ctx.lineWidth = ball.isPowered ? 3 : 1; ctx.stroke();
 
     if (goalMsg.timer > 0) { ctx.font = "bold 80px sans-serif"; ctx.textAlign = "center"; ctx.fillStyle = "white"; ctx.fillText(goalMsg.text, MID_X, MID_Y_GAME); }
     document.getElementById('live-score').innerText = score[0] + " - " + score[1];
