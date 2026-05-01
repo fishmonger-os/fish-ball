@@ -269,7 +269,7 @@ function movePlayer(p, input) {
 
 function resetPos(full) {
     isGoalProcessed = false; ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
-    for(let i=0; i<activeCount; i++) { players[i].vx = 0; players[i].vy = 0; if(full) { players[i].pwrReadyTime = 0; players[i].boostReadyTime = 0; } }
+    for(let i=0; i<6; i++) { if(players[i]) { players[i].vx = 0; players[i].vy = 0; if(full) { players[i].pwrReadyTime = 0; players[i].boostReadyTime = 0; } } }
     const t0 = players.filter((p,i) => i < activeCount && playerTeams[i] === 0);
     const t1 = players.filter((p,i) => i < activeCount && playerTeams[i] === 1);
     if(t0[0]){ t0[0].x=t0[0].tx=250; t0[0].y=t0[0].ty=MID_Y_GAME; if(t0[1]){t0[1].x=t0[1].tx=120; t0[1].y=t0[1].ty=MID_Y_GAME-120;} if(t0[2]){t0[2].x=t0[2].tx=120; t0[2].y=t0[2].ty=MID_Y_GAME+120;} }
@@ -309,7 +309,6 @@ function startGame() {
         for(let i=0; i<activeCount; i++) players[i].team=playerTeams[i]; 
         resetPos(true); 
         sendToAll({type:'start'}); 
-        // Invio immediato dello stato della partita per sicurezza
         sendToAll({ type: 'sync', ball, players: players.map(p => ({ x: p.x, y: p.y, kick: p.kick, team: p.team, boostEndTime: p.boostEndTime, boostReadyTime: p.boostReadyTime, pwrReadyTime: p.pwrReadyTime })), score });
         gameStarted=true; 
         document.getElementById('menu-overlay').style.display="none"; 
@@ -317,7 +316,20 @@ function startGame() {
     } 
 }
 
-function backToLobby() { gameStarted = false; document.getElementById('menu-overlay').style.display = "flex"; document.getElementById('esc-btn').style.display = "none"; if(isHost) { sendToAll({type: 'stop'}); refreshLobbyState(); } }
+function backToLobby() { 
+    gameStarted = false; 
+    document.getElementById('menu-overlay').style.display = "flex"; 
+    document.getElementById('esc-btn').style.display = "none"; 
+    if(isHost) { 
+        // Pulisce le connessioni chiuse per aggiornare correttamente la lobby
+        connections = connections.filter(c => c.open); 
+        sendToAll({type: 'stop'}); 
+        refreshLobbyState(); 
+        // Reset visivo dei giocatori non connessi
+        for(let i=activeCount; i<6; i++) { players[i].x = players[i].tx = -1000; }
+    } 
+}
+
 function sendToAll(d) { connections.forEach(c => { if(c.open) c.send(d); }); }
 function togglePlayerTeam(i){ if(isHost){playerTeams[i]=1-playerTeams[i]; refreshLobbyState();}}
 function toggleFullscreen() { if (audioCtx.state === 'suspended') audioCtx.resume(); const c = document.getElementById('game-container'); if (!document.fullscreenElement) { if (c.requestFullscreen) c.requestFullscreen(); else if (c.webkitRequestFullscreen) c.webkitRequestFullscreen(); } else { if (document.exitFullscreen) document.exitFullscreen(); } }
