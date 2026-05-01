@@ -26,8 +26,9 @@
         .p-slot.team-0 { border-left: 5px solid #FF0000; background: rgba(255,0,0,0.1); }
         .p-slot.team-1 { border-left: 5px solid #0000FF; background: rgba(0,0,255,0.1); }
         
-        .name-input { background: transparent; border: none; color: inherit; border-radius: 4px; padding: 2px 5px; width: 80px; font-size: 0.9em; font-weight: inherit; text-align: center; pointer-events: auto; }
-        .p-slot.active .name-input { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); }
+        /* FIX: Assicuriamoci che gli input siano cliccabili e visibili */
+        .name-input { background: transparent; border: none; color: inherit; border-radius: 4px; padding: 2px 5px; width: 100px; font-size: 0.9em; font-weight: inherit; text-align: center; outline: none; }
+        .p-slot.active .name-input { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); cursor: text; }
         
         #fs-btn { display: none; background: #2196F3; color: white; border: none; padding: 15px 25px; font-size: 1.1em; cursor: pointer; border-radius: 30px; font-weight: bold; margin-bottom: 20px; text-transform: uppercase; width: 100%; }
         #start-btn { background: #4CAF50; color: white; border: none; padding: 15px 50px; font-size: 1.2em; cursor: pointer; border-radius: 30px; display: none; font-weight: bold; text-transform: uppercase; margin-top: 10px; }
@@ -149,6 +150,9 @@ function getGamepadInput() {
 
 function updateInput() {
     let kx = 0, ky = 0; keys.kick = keys.boost = keys.pwr = false;
+    // FIX: Se l'utente sta scrivendo in un input, non muovere il giocatore
+    if (document.activeElement.tagName === 'INPUT') return;
+
     if (rawKeys['ArrowLeft'] || rawKeys['KeyA']) kx--; if (rawKeys['ArrowRight'] || rawKeys['KeyD']) kx++;
     if (rawKeys['ArrowUp'] || rawKeys['KeyW']) ky--; if (rawKeys['ArrowDown'] || rawKeys['KeyS']) ky++;
     if (rawKeys['Space'] || rawKeys['KeyX']) keys.kick = true;
@@ -230,7 +234,6 @@ peer.on('connection', conn => {
                 } 
             }
             if(data.type === 'input') { const idx = connections.indexOf(conn) + 1; allRemoteKeys[idx] = data.keys; }
-            if(data.type === 'nameUpdate' && isHost) { playerNames[data.idx] = data.name; refreshLobbyState(); }
         });
     });
 });
@@ -257,10 +260,11 @@ function setupGuest(conn) {
 }
 
 function handleNameChange(idx) {
-    if (!isHost) return; // Solo l'host può modificare
+    if (!isHost) return;
     const newName = document.getElementById('name' + idx).value;
     playerNames[idx] = newName;
-    refreshLobbyState();
+    // Sincronizziamo immediatamente gli altri dopo ogni carattere digitato
+    sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors, teams: playerTeams, names: playerNames });
 }
 
 function gameLoop(t) {
@@ -341,11 +345,13 @@ function refreshLobbyState() {
         const label = document.getElementById('label'+i);
         if(el) {
             el.className = 'p-slot' + (i < activeCount ? ' active' : '') + (playerTeams[i] === 0 ? ' team-0' : ' team-1') + (i === mySlot ? ' is-me' : '');
-            input.value = playerNames[i];
             
-            // MODIFICA: Solo l'host può modificare gli input. Per i guest sono sempre readOnly.
+            // FIX: Aggiorna il valore dell'input solo se non è quello che l'host sta modificando in questo momento
+            if (document.activeElement !== input) {
+                input.value = playerNames[i];
+            }
+            
             input.readOnly = !isHost; 
-            
             if (i === 0) label.innerText = (mySlot === 0) ? "(TU - HOST)" : "(HOST)";
             else label.innerText = (i === mySlot) ? "(TU)" : "";
         }
@@ -387,7 +393,13 @@ function backToLobby() {
 function sendToAll(d) { connections.forEach(c => { if(c.open) c.send(d); }); }
 function togglePlayerTeam(i){ if(isHost){playerTeams[i]=1-playerTeams[i]; refreshLobbyState();}}
 function toggleFullscreen() { if (audioCtx.state === 'suspended') audioCtx.resume(); const c = document.getElementById('game-container'); if (!document.fullscreenElement) { if (c.requestFullscreen) c.requestFullscreen(); else if (c.webkitRequestFullscreen) c.webkitRequestFullscreen(); } else { if (document.exitFullscreen) document.exitFullscreen(); } }
-window.addEventListener('keydown', e => { if (audioCtx.state === 'suspended') audioCtx.resume(); rawKeys[e.code]=true; if(e.code === 'Escape' && gameStarted) backToLobby();});
+
+window.addEventListener('keydown', e => { 
+    if (audioCtx.state === 'suspended') audioCtx.resume(); 
+    rawKeys[e.code]=true; 
+    // Permette di usare ESC per uscire anche se si sta scrivendo
+    if(e.code === 'Escape' && gameStarted) backToLobby();
+});
 window.addEventListener('keyup', e => rawKeys[e.code]=false);
 </script>
 </body>
