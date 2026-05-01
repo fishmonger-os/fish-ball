@@ -20,13 +20,12 @@
         .color-dot.active { border: 2px solid white; transform: scale(1.2); box-shadow: 0 0 8px rgba(255,255,255,0.6); }
         
         .player-status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 15px 0; }
-        .p-slot { opacity: 0.4; filter: grayscale(1); transition: 0.3s; padding: 8px; border-radius: 8px; border: 1px solid transparent; display: flex; align-items: center; justify-content: space-between; color: #777; font-weight: normal; }
+        .p-slot { opacity: 0.4; filter: grayscale(1); transition: 0.3s; padding: 8px; border-radius: 8px; border: 1px solid transparent; display: flex; align-items: center; justify-content: space-between; color: #777; font-weight: normal; cursor: pointer; }
         .p-slot.active { opacity: 1; filter: grayscale(0); color: #fff; font-weight: bold; }
         .p-slot.is-me { color: #ffeb3b !important; border: 1px solid rgba(255, 235, 59, 0.3); }
         .p-slot.team-0 { border-left: 5px solid #FF0000; background: rgba(255,0,0,0.1); }
         .p-slot.team-1 { border-left: 5px solid #0000FF; background: rgba(0,0,255,0.1); }
         
-        /* FIX: Assicuriamoci che gli input siano cliccabili e visibili */
         .name-input { background: transparent; border: none; color: inherit; border-radius: 4px; padding: 2px 5px; width: 100px; font-size: 0.9em; font-weight: inherit; text-align: center; outline: none; }
         .p-slot.active .name-input { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); cursor: text; }
         
@@ -49,7 +48,7 @@
         <div id="menu-overlay">
             <div class="lobby-box">
                 <h1 style="margin:0; color:#4CAF50; letter-spacing: 2px; font-size: 1.5em;">FISHBALL 3vs3</h1>
-                <div id="status-text" style="margin-bottom: 10px; font-size: 0.9em;">Generazione ID...</div>
+                <div id="status-text" style="margin-bottom: 10px; font-size: 0.9em;">Inizializzazione...</div>
                 <button id="fs-btn" onclick="toggleFullscreen()">ADATTA SCHERMO</button>
                 <div id="gp-indicator">Joystick non rilevato</div>
                 <div class="team-settings" id="host-controls" style="display:none;">
@@ -57,28 +56,29 @@
                     <div class="team-box"><b style="color:#4444ff; font-size: 0.8em;">SQUADRA 2</b><div class="color-grid" id="picker-t2-c1"></div><div class="color-grid" id="picker-t2-c2"></div></div>
                 </div>
                 <div class="player-status-grid">
-                    <div id="slot0" class="p-slot team-0">
-                        <input type="text" class="name-input" id="name0" value="P1" maxlength="8" oninput="handleNameChange(0)">
-                        <span id="label0" style="font-size: 0.7em;">(HOST)</span>
+                    <!-- Gli slot chiamano togglePlayerTeam(i) ma l'input ferma la propagazione[cite: 1] -->
+                    <div id="slot0" class="p-slot team-0" onclick="togglePlayerTeam(0)">
+                        <input type="text" class="name-input" id="name0" value="P1" maxlength="8" oninput="handleNameChange(0)" onclick="event.stopPropagation()">
+                        <span id="label0" style="font-size: 0.7em;"></span>
                     </div> 
                     <div id="slot1" class="p-slot team-1" onclick="togglePlayerTeam(1)">
-                        <input type="text" class="name-input" id="name1" value="P2" maxlength="8" oninput="handleNameChange(1)">
+                        <input type="text" class="name-input" id="name1" value="P2" maxlength="8" oninput="handleNameChange(1)" onclick="event.stopPropagation()">
                         <span id="label1" style="font-size: 0.7em;"></span>
                     </div>
                     <div id="slot2" class="p-slot team-0" onclick="togglePlayerTeam(2)">
-                        <input type="text" class="name-input" id="name2" value="P3" maxlength="8" oninput="handleNameChange(2)">
+                        <input type="text" class="name-input" id="name2" value="P3" maxlength="8" oninput="handleNameChange(2)" onclick="event.stopPropagation()">
                         <span id="label2" style="font-size: 0.7em;"></span>
                     </div> 
                     <div id="slot3" class="p-slot team-1" onclick="togglePlayerTeam(3)">
-                        <input type="text" class="name-input" id="name3" value="P4" maxlength="8" oninput="handleNameChange(3)">
+                        <input type="text" class="name-input" id="name3" value="P4" maxlength="8" oninput="handleNameChange(3)" onclick="event.stopPropagation()">
                         <span id="label3" style="font-size: 0.7em;"></span>
                     </div>
                     <div id="slot4" class="p-slot team-0" onclick="togglePlayerTeam(4)">
-                        <input type="text" class="name-input" id="name4" value="P5" maxlength="8" oninput="handleNameChange(4)">
+                        <input type="text" class="name-input" id="name4" value="P5" maxlength="8" oninput="handleNameChange(4)" onclick="event.stopPropagation()">
                         <span id="label4" style="font-size: 0.7em;"></span>
                     </div> 
                     <div id="slot5" class="p-slot team-1" onclick="togglePlayerTeam(5)">
-                        <input type="text" class="name-input" id="name5" value="P6" maxlength="8" oninput="handleNameChange(5)">
+                        <input type="text" class="name-input" id="name5" value="P6" maxlength="8" oninput="handleNameChange(5)" onclick="event.stopPropagation()">
                         <span id="label5" style="font-size: 0.7em;"></span>
                     </div>
                 </div>
@@ -120,7 +120,7 @@ let playerTeams = [0, 1, 0, 1, 0, 1];
 let playerNames = ["P1", "P2", "P3", "P4", "P5", "P6"];
 
 const W = 956, OFFSET_TOP = 130, TOTAL_H = 720, H_GAME = TOTAL_H - OFFSET_TOP - 20; 
-const MID_X = W / 2, MID_Y_GAME = OFFSET_TOP + (H_GAME / 2), GOAL_SIZE_HALF = 65 * 1.05; 
+const MID_X = W / 2, MID_Y_GAME = OFFSET_TOP + (H_GAME / 2), GOAL_SIZE_HALF = 68; 
 
 let players = Array.from({length: 6}, () => ({ x: -1000, y: -1000, tx: -1000, ty: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, boostEndTime: 0, boostReadyTime: 0, pwrReadyTime: 0, team: 0 }));
 let ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
@@ -135,32 +135,15 @@ topImage.src = 'banner.png';
 window.addEventListener("gamepadconnected", () => { document.getElementById('gp-indicator').innerText = "Joystick Connesso!"; });
 window.addEventListener("gamepaddisconnected", () => { document.getElementById('gp-indicator').innerText = "Joystick non rilevato"; });
 
-function getGamepadInput() {
-    const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
-    for (let i = 0; i < gamepads.length; i++) {
-        const gp = gamepads[i];
-        if (!gp) continue;
-        let lx = gp.axes[0], ly = gp.axes[1], deadzone = 0.15;
-        let mag = Math.sqrt(lx * lx + ly * ly);
-        if (mag < deadzone) { lx = 0; ly = 0; } else { lx = (lx / mag) * ((mag - deadzone) / (1 - deadzone)); ly = (ly / mag) * ((mag - deadzone) / (1 - deadzone)); }
-        return { ax: lx, ay: ly, kick: gp.buttons[0].pressed || gp.buttons[2].pressed, boost: gp.buttons[4].pressed || gp.buttons[5].pressed, pwr: gp.buttons[1].pressed || gp.buttons[3].pressed };
-    }
-    return null;
-}
-
 function updateInput() {
     let kx = 0, ky = 0; keys.kick = keys.boost = keys.pwr = false;
-    // FIX: Se l'utente sta scrivendo in un input, non muovere il giocatore
     if (document.activeElement.tagName === 'INPUT') return;
-
     if (rawKeys['ArrowLeft'] || rawKeys['KeyA']) kx--; if (rawKeys['ArrowRight'] || rawKeys['KeyD']) kx++;
     if (rawKeys['ArrowUp'] || rawKeys['KeyW']) ky--; if (rawKeys['ArrowDown'] || rawKeys['KeyS']) ky++;
     if (rawKeys['Space'] || rawKeys['KeyX']) keys.kick = true;
     if (rawKeys['KeyC'] || rawKeys['KeyQ']) keys.pwr = true;
     if (rawKeys['ShiftLeft']) keys.boost = true;
     if (kx !== 0 || ky !== 0) { let kmag = Math.sqrt(kx * kx + ky * ky); kx /= kmag; ky /= kmag; }
-    const gp = getGamepadInput();
-    if (gp) { if (Math.abs(gp.ax) > 0.01 || Math.abs(gp.ay) > 0.01) { kx = gp.ax; ky = gp.ay; } if (gp.kick) keys.kick = true; if (gp.boost) keys.boost = true; if (gp.pwr) keys.pwr = true; }
     keys.ax = kx; keys.ay = ky;
 }
 
@@ -214,17 +197,26 @@ function resolve(c1, c2, isPost = false) {
     } 
 }
 
-const peer = new Peer();
+// NETWORK LOGIC
+const peer = new Peer({ debug: 1 });
 let connections = [];
+
 peer.on('open', id => {
     const joinId = new URLSearchParams(window.location.search).get('join');
-    if (joinId) { isHost = false; document.getElementById('status-text').innerText = "Connessione..."; setupGuest(peer.connect(joinId, { reliable: true })); } 
-    else { isHost = true; document.getElementById('status-text').innerHTML = `Link:<br><input type="text" id="link-input" value="${window.location.origin + window.location.pathname}?join=${id}" readonly onclick="this.select(); document.execCommand('copy');">`; document.getElementById('start-btn').style.display = "inline-block"; initColorPickers(); refreshLobbyState(); drawField(); requestAnimationFrame(gameLoop); }
+    if (joinId) { 
+        isHost = false; 
+        document.getElementById('status-text').innerText = "Connessione in corso..."; 
+        setupGuest(peer.connect(joinId, { reliable: true }));
+    } else { 
+        isHost = true; mySlot = 0;
+        document.getElementById('status-text').innerHTML = `Lobby ID: <input type="text" id="link-input" value="${window.location.origin + window.location.pathname}?join=${id}" readonly onclick="this.select(); document.execCommand('copy');">`;
+        document.getElementById('start-btn').style.display = "inline-block"; 
+        initColorPickers(); refreshLobbyState(); drawField(); requestAnimationFrame(gameLoop); 
+    }
 });
 
 peer.on('connection', conn => {
     conn.on('open', () => {
-        if (audioCtx.state === 'suspended') audioCtx.resume();
         conn.on('data', data => { 
             if(data.type === 'join') { 
                 if (!connections.find(c => c.peer === conn.peer)) { 
@@ -239,13 +231,13 @@ peer.on('connection', conn => {
 });
 
 function setupGuest(conn) {
-    conn.on('open', () => { 
-        if (audioCtx.state === 'suspended') audioCtx.resume();
-        document.getElementById('status-text').innerText = "Sincronizzazione...";
-        const joinInterval = setInterval(() => { if (mySlot === 0) conn.send({ type: 'join' }); else clearInterval(joinInterval); }, 800);
-    });
+    let joinAttempt = setInterval(() => {
+        if (mySlot !== 0) { clearInterval(joinAttempt); return; }
+        if (conn.open) conn.send({ type: 'join' });
+    }, 1000);
+
     conn.on('data', data => {
-        if (data.type === 'initSlot') { mySlot = data.slot; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); document.getElementById('status-text').innerText = "In Lobby (GUEST)"; }
+        if (data.type === 'initSlot') { mySlot = data.slot; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); document.getElementById('status-text').innerText = "Connesso (GUEST)"; }
         if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); }
         if (data.type === 'start') { gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; document.getElementById('esc-btn').style.display = "flex"; }
         if (data.type === 'sync') { 
@@ -255,15 +247,14 @@ function setupGuest(conn) {
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; }
         if (data.type === 'stop') backToLobby();
     });
+
     function inputLoop() { updateInput(); if(conn.open) conn.send({type:'input', keys}); requestAnimationFrame(inputLoop); }
     inputLoop(); requestAnimationFrame(gameLoop);
 }
 
 function handleNameChange(idx) {
     if (!isHost) return;
-    const newName = document.getElementById('name' + idx).value;
-    playerNames[idx] = newName;
-    // Sincronizziamo immediatamente gli altri dopo ogni carattere digitato
+    playerNames[idx] = document.getElementById('name' + idx).value;
     sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors, teams: playerTeams, names: playerNames });
 }
 
@@ -280,7 +271,7 @@ function gameLoop(t) {
             for(let i=0; i<activeCount; i++) { for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); resolve(players[i], ball); posts.forEach(post => resolve(post, players[i], true)); checkLimits(players[i], false); }
             posts.forEach(p => resolve(p, ball, true)); checkLimits(ball, true);
         }
-        if (t - lastSync > 32) { 
+        if (t - lastSync > 30) { 
             sendToAll({ type: 'sync', ball, players: players.map(p => ({ x: p.x, y: p.y, kick: p.kick, team: p.team, boostEndTime: p.boostEndTime, boostReadyTime: p.boostReadyTime, pwrReadyTime: p.pwrReadyTime })), score }); 
             lastSync = t; 
         }
@@ -345,14 +336,9 @@ function refreshLobbyState() {
         const label = document.getElementById('label'+i);
         if(el) {
             el.className = 'p-slot' + (i < activeCount ? ' active' : '') + (playerTeams[i] === 0 ? ' team-0' : ' team-1') + (i === mySlot ? ' is-me' : '');
-            
-            // FIX: Aggiorna il valore dell'input solo se non è quello che l'host sta modificando in questo momento
-            if (document.activeElement !== input) {
-                input.value = playerNames[i];
-            }
-            
+            if (document.activeElement !== input) input.value = playerNames[i];
             input.readOnly = !isHost; 
-            if (i === 0) label.innerText = (mySlot === 0) ? "(TU - HOST)" : "(HOST)";
+            if (i === 0) label.innerText = (mySlot === 0) ? "(HOST)" : "(HOST)";
             else label.innerText = (i === mySlot) ? "(TU)" : "";
         }
     } 
@@ -364,14 +350,11 @@ function initColorPickers() { if(!isHost) return; document.getElementById('host-
 function startGame() { 
     if (audioCtx.state === 'suspended') audioCtx.resume(); 
     if(isHost){ 
-        score=[0,0]; 
-        for(let i=0; i<activeCount; i++) players[i].team=playerTeams[i]; 
-        resetPos(true); 
-        sendToAll({type:'start'}); 
-        sendToAll({ type: 'sync', ball, players: players.map(p => ({ x: p.x, y: p.y, kick: p.kick, team: p.team, boostEndTime: p.boostEndTime, boostReadyTime: p.boostReadyTime, pwrReadyTime: p.pwrReadyTime })), score });
-        gameStarted=true; 
+        score=[0,0]; for(let i=0; i<activeCount; i++) players[i].team=playerTeams[i]; 
+        resetPos(true); gameStarted=true; 
         document.getElementById('menu-overlay').style.display="none"; 
         document.getElementById('esc-btn').style.display="flex"; 
+        sendToAll({type:'start'}); 
     } 
 }
 
@@ -381,10 +364,6 @@ function backToLobby() {
     document.getElementById('esc-btn').style.display = "none"; 
     if(isHost) { 
         connections = connections.filter(c => c.open); 
-        for(let i = connections.length + 1; i < 6; i++) {
-            playerNames[i] = "P" + (i + 1);
-            players[i].x = players[i].tx = -1000;
-        }
         sendToAll({type: 'stop'}); 
         refreshLobbyState(); 
     } 
@@ -397,8 +376,7 @@ function toggleFullscreen() { if (audioCtx.state === 'suspended') audioCtx.resum
 window.addEventListener('keydown', e => { 
     if (audioCtx.state === 'suspended') audioCtx.resume(); 
     rawKeys[e.code]=true; 
-    // Permette di usare ESC per uscire anche se si sta scrivendo
-    if(e.code === 'Escape' && gameStarted) backToLobby();
+    if(e.code === 'Escape' && gameStarted) backToLobby(); // LOGICA ESC RIPRISTINATA[cite: 1]
 });
 window.addEventListener('keyup', e => rawKeys[e.code]=false);
 </script>
