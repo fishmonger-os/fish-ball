@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>FISHBALL 3vs3 - Power Glow Only</title>
+    <title>FISHBALL 3vs3 - Fix Undefined</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -211,9 +211,9 @@ function setupGuest(conn) {
     conn.on('data', data => {
         if (data.type === 'initSlot') { mySlot = data.slot; teamColors = data.colors; playerTeams = data.teams; refreshLobbyState(); }
         if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; playerTeams = data.teams; refreshLobbyState(); }
-        if (data.type === 'start') { gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; document.getElementById('esc-btn').style.display = "flex"; }
+        if (data.type === 'start') { gameStarted = true; goalMsg = { text: "", timer: 0 }; document.getElementById('menu-overlay').style.display = "none"; document.getElementById('esc-btn').style.display = "flex"; }
         if (data.type === 'sync') { ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score; data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].boostEndTime = p.boostEndTime; players[i].boostReadyTime = p.boostReadyTime; players[i].pwrReadyTime = p.pwrReadyTime; players[i].team = p.team; } }); }
-        if (data.type = 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; }
+        if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; }
         if (data.type === 'stop') backToLobby();
     });
     function inputLoop() { updateInput(); if(conn.open) conn.send({type:'input', keys}); requestAnimationFrame(inputLoop); }
@@ -251,12 +251,11 @@ function movePlayer(p, input) {
         if (input.pwr && now >= p.pwrReadyTime) { 
             ball.vx = (dx/d)*6.5; ball.vy = (dy/d)*6.5; 
             p.pwrReadyTime = now + 30000; 
-            p.kick = 15; // ATTIVA BAGLIORE SOLO PER POWER SHOT
+            p.kick = 15; 
             playHitSound(); 
         }
         else if (input.kick) { 
             ball.vx = (dx/d)*4.2; ball.vy = (dy/d)*4.2; 
-            // p.kick = 15; // Rimosso: Niente bagliore per calcio normale
             playHitSound(); 
         }
     }
@@ -279,7 +278,7 @@ function draw() {
         const p=players[i]; if(p.x<-500)continue; 
         ctx.fillStyle=teamColors[p.team*2]; 
         ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.28); ctx.fill(); 
-        ctx.strokeStyle=p.kick>0?"#FFF":"#000"; // Questo ora reagisce solo al Power Shot
+        ctx.strokeStyle=p.kick>0?"#FFF":"#000"; 
         ctx.lineWidth=2.5; ctx.stroke(); 
         ctx.fillStyle=teamColors[p.team*2+1]; 
         ctx.beginPath(); ctx.arc(p.x,p.y,8.5,0,6.28); ctx.fill(); 
@@ -287,13 +286,13 @@ function draw() {
     } 
     ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,6.28); ctx.fill(); ctx.stroke(); 
     const myP=players[mySlot]; if(myP){ const bRem=Math.ceil((myP.boostReadyTime-now)/1000), pRem=Math.ceil((myP.pwrReadyTime-now)/1000); document.getElementById('timer-boost').innerText="BST: "+(bRem>0?bRem+"s":"READY"); document.getElementById('timer-pwr').innerText="PWR: "+(pRem>0?pRem+"s":"READY"); } 
-    if(goalMsg.timer>0){ctx.font="bold 80px sans-serif"; ctx.textAlign="center"; ctx.fillStyle="white"; ctx.fillText(goalMsg.text,MID_X,MID_Y_GAME);} 
+    if(goalMsg.timer>0 && goalMsg.text){ctx.font="bold 80px sans-serif"; ctx.textAlign="center"; ctx.fillStyle="white"; ctx.fillText(goalMsg.text,MID_X,MID_Y_GAME);} 
     document.getElementById('live-score').innerText=score[0]+" - "+score[1]; 
 }
 
 function refreshLobbyState() { activeCount = isHost ? (connections.length + 1) : activeCount; for(let i=0; i<6; i++) { const el = document.getElementById('slot'+i); if(el) el.className = 'p-slot' + (i < activeCount ? ' active' : '') + (playerTeams[i] === 0 ? ' team-0' : ' team-1'); } if(isHost) sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors, teams: playerTeams }); }
 function initColorPickers() { if(!isHost) return; document.getElementById('host-controls').style.display='flex'; const ids = ['picker-t1-c1','picker-t1-c2','picker-t2-c1','picker-t2-c2']; ids.forEach((id,idx) => { const container = document.getElementById(id); if (container.children.length === 0) { PRESET_COLORS.forEach(col => { const d = document.createElement('div'); d.className = 'color-dot'; d.style.backgroundColor = col; d.dataset.color = col; d.onclick = () => { teamColors[idx]=col; initColorPickers(); refreshLobbyState(); }; container.appendChild(d); }); } Array.from(container.children).forEach(dot => { dot.className = 'color-dot' + (teamColors[idx] === dot.dataset.color ? ' active' : ''); }); }); }
-function startGame() { if (audioCtx.state === 'suspended') audioCtx.resume(); if(isHost){ score=[0,0]; gameStarted=true; document.getElementById('menu-overlay').style.display="none"; document.getElementById('esc-btn').style.display="flex"; for(let i=0; i<activeCount; i++) players[i].team=playerTeams[i]; resetPos(true); sendToAll({type:'start'}); } }
+function startGame() { if (audioCtx.state === 'suspended') audioCtx.resume(); if(isHost){ score=[0,0]; gameStarted=true; goalMsg = { text: "", timer: 0 }; document.getElementById('menu-overlay').style.display="none"; document.getElementById('esc-btn').style.display="flex"; for(let i=0; i<activeCount; i++) players[i].team=playerTeams[i]; resetPos(true); sendToAll({type:'start'}); } }
 function backToLobby() { gameStarted = false; document.getElementById('menu-overlay').style.display = "flex"; document.getElementById('esc-btn').style.display = "none"; if(isHost) { sendToAll({type: 'stop'}); refreshLobbyState(); } }
 function sendToAll(d) { connections.forEach(c => { if(c.open) c.send(d); }); }
 function togglePlayerTeam(i){ if(isHost){playerTeams[i]=1-playerTeams[i]; refreshLobbyState();}}
