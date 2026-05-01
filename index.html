@@ -261,7 +261,7 @@ function movePlayer(p, input) {
     p.vx += input.ax * accel; p.vy += input.ay * accel; p.vx *= 0.89; p.vy *= 0.89; p.x += p.vx; p.y += p.vy;
     let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy);
     if (d < p.r + ball.r + 8) {
-        if (input.pwr && now >= p.pwrReadyTime) { ball.vx = (dx/d)*6.5; ball.vy = (dy/d)*6.5; p.pwrReadyTime = now + 30000; p.kick = 15; playHitSound(); } // Sincronizzato con l'effetto grafico
+        if (input.pwr && now >= p.pwrReadyTime) { ball.vx = (dx/d)*6.5; ball.vy = (dy/d)*6.5; p.pwrReadyTime = now + 30000; p.kick = 15; playHitSound(); }
         else if (input.kick) { ball.vx = (dx/d)*4.2; ball.vy = (dy/d)*4.2; p.kick = 15; playHitSound(); }
     }
     if (p.kick > 0) p.kick--;
@@ -283,12 +283,12 @@ function draw() {
     for(let i=0; i<activeCount; i++){ 
         const p=players[i]; if(p.x<-500)continue; 
         ctx.fillStyle=teamColors[p.team*2]; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.28); ctx.fill(); 
-        ctx.strokeStyle=p.kick>0?"#FFF":"#000"; ctx.lineWidth=2.5; ctx.stroke(); // Illuminazione bianca per TUTTI i tiri
+        ctx.strokeStyle=p.kick>0?"#FFF":"#000"; ctx.lineWidth=2.5; ctx.stroke(); 
         ctx.fillStyle=teamColors[p.team*2+1]; ctx.beginPath(); ctx.arc(p.x,p.y,8.5,0,6.28); ctx.fill(); 
         ctx.fillStyle=(i===mySlot)?"yellow":"white"; ctx.font="bold 12px sans-serif"; ctx.textAlign="center"; ctx.fillText("P"+(i+1),p.x,p.y-p.r-8); 
     } 
     ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,6.28); ctx.fill(); 
-    ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.stroke(); // Palla pulita, senza illuminazione
+    ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.stroke(); 
     const myP=players[mySlot]; 
     if(myP){ 
         const bRem=Math.ceil((myP.boostReadyTime-now)/1000); const pRem=Math.ceil((myP.pwrReadyTime-now)/1000); 
@@ -301,7 +301,22 @@ function draw() {
 
 function refreshLobbyState() { activeCount = isHost ? (connections.length + 1) : activeCount; for(let i=0; i<6; i++) { const el = document.getElementById('slot'+i); if(el) el.className = 'p-slot' + (i < activeCount ? ' active' : '') + (playerTeams[i] === 0 ? ' team-0' : ' team-1'); } if(isHost) sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors, teams: playerTeams }); }
 function initColorPickers() { if(!isHost) return; document.getElementById('host-controls').style.display='flex'; const ids = ['picker-t1-c1','picker-t1-c2','picker-t2-c1','picker-t2-c2']; ids.forEach((id,idx) => { const container = document.getElementById(id); if (container.children.length === 0) { PRESET_COLORS.forEach(col => { const d = document.createElement('div'); d.className = 'color-dot'; d.style.backgroundColor = col; d.dataset.color = col; d.onclick = () => { teamColors[idx]=col; initColorPickers(); refreshLobbyState(); }; container.appendChild(d); }); } Array.from(container.children).forEach(dot => { dot.className = 'color-dot' + (teamColors[idx] === dot.dataset.color ? ' active' : ''); }); }); }
-function startGame() { if (audioCtx.state === 'suspended') audioCtx.resume(); if(isHost){ score=[0,0]; gameStarted=true; document.getElementById('menu-overlay').style.display="none"; document.getElementById('esc-btn').style.display="flex"; for(let i=0; i<activeCount; i++) players[i].team=playerTeams[i]; resetPos(true); sendToAll({type:'start'}); } }
+
+function startGame() { 
+    if (audioCtx.state === 'suspended') audioCtx.resume(); 
+    if(isHost){ 
+        score=[0,0]; 
+        for(let i=0; i<activeCount; i++) players[i].team=playerTeams[i]; 
+        resetPos(true); 
+        sendToAll({type:'start'}); 
+        // Invio immediato dello stato della partita per sicurezza
+        sendToAll({ type: 'sync', ball, players: players.map(p => ({ x: p.x, y: p.y, kick: p.kick, team: p.team, boostEndTime: p.boostEndTime, boostReadyTime: p.boostReadyTime, pwrReadyTime: p.pwrReadyTime })), score });
+        gameStarted=true; 
+        document.getElementById('menu-overlay').style.display="none"; 
+        document.getElementById('esc-btn').style.display="flex"; 
+    } 
+}
+
 function backToLobby() { gameStarted = false; document.getElementById('menu-overlay').style.display = "flex"; document.getElementById('esc-btn').style.display = "none"; if(isHost) { sendToAll({type: 'stop'}); refreshLobbyState(); } }
 function sendToAll(d) { connections.forEach(c => { if(c.open) c.send(d); }); }
 function togglePlayerTeam(i){ if(isHost){playerTeams[i]=1-playerTeams[i]; refreshLobbyState();}}
