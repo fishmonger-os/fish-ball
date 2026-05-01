@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>FISHBALL 3vs3 - definitivo1</title>
+    <title>FISHBALL 3vs3 - Definitivo Full Mobile</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -12,7 +12,14 @@
         #bgCanvas { z-index: 1; }
         #gameCanvas { z-index: 2; }
         #menu-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.9); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 10; backdrop-filter: blur(5px); }
-        .lobby-box { background: #222; padding: 25px; border-radius: 20px; border: 1px solid #444; text-align: center; min-width: 500px; }
+        .lobby-box { background: #222; padding: 25px; border-radius: 20px; border: 1px solid #444; text-align: center; min-width: 500px; max-height: 90vh; overflow-y: auto; }
+        
+        #fs-btn { display: none; background: #2196F3; color: white; border: none; padding: 15px 25px; font-size: 1.1em; cursor: pointer; border-radius: 30px; font-weight: bold; margin-bottom: 20px; text-transform: uppercase; width: 100%; }
+        @media (pointer: coarse) {
+            #fs-btn { display: block; }
+            .lobby-box { min-width: 90%; padding: 15px; }
+        }
+
         .team-settings { display: flex; justify-content: space-around; margin: 15px 0; gap: 10px; }
         .team-box { background: #333; padding: 10px; border-radius: 12px; flex: 1; border: 1px solid #444; }
         .color-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 4px; margin-top: 8px; justify-items: center; }
@@ -25,7 +32,7 @@
         .p-slot.team-1 { border-left: 5px solid #0000FF; background: rgba(0,0,255,0.15); }
         .p-name { background: transparent; border: none; color: inherit; font-family: inherit; font-size: inherit; font-weight: bold; text-align: center; width: 60%; cursor: pointer; text-transform: uppercase; }
         .p-name:focus { outline: none; background: rgba(255,255,255,0.1); border-radius: 4px; }
-        #fs-btn { display: none; background: #2196F3; color: white; border: none; padding: 15px 25px; font-size: 1.1em; cursor: pointer; border-radius: 30px; font-weight: bold; margin-bottom: 20px; text-transform: uppercase; width: 100%; }
+        
         #start-btn { background: #4CAF50; color: white; border: none; padding: 15px 50px; font-size: 1.2em; cursor: pointer; border-radius: 30px; display: none; font-weight: bold; text-transform: uppercase; margin-top: 10px; }
         #esc-btn { position: absolute; top: 20px; right: 20px; background: rgba(255,0,0,0.7); color: white; border: none; width: 45px; height: 45px; border-radius: 50%; font-size: 20px; font-weight: bold; cursor: pointer; z-index: 100; display: none; align-items: center; justify-content: center; }
         .ui-bottom-right { position: absolute; bottom: 30px; right: 30px; text-align: right; pointer-events: none; z-index: 5; font-family: monospace; }
@@ -45,7 +52,9 @@
             <div class="lobby-box">
                 <h1 style="margin:0; color:#4CAF50; letter-spacing: 2px; font-size: 1.5em;">FISHBALL 3vs3</h1>
                 <div id="status-text" style="margin-bottom: 10px; font-size: 0.9em;">Generazione ID...</div>
+                
                 <button id="fs-btn" onclick="toggleFullscreen()">ADATTA SCHERMO</button>
+                
                 <div id="gp-indicator">Premi un tasto sul joypad per attivarlo</div>
                 <div class="team-settings" id="host-controls" style="display:none;">
                     <div class="team-box"><b style="color:#ff4444; font-size: 0.8em;">SQUADRA 1</b><div class="color-grid" id="picker-t1-c1"></div><div class="color-grid" id="picker-t1-c2"></div></div>
@@ -92,7 +101,8 @@ const W = 956, OFFSET_TOP = 130, TOTAL_H = 720, H_GAME = TOTAL_H - OFFSET_TOP - 
 const MID_X = W / 2, MID_Y_GAME = OFFSET_TOP + (H_GAME / 2), GOAL_SIZE_HALF = 65 * 1.05; 
 const PRESET_COLORS = ['#FF0000', '#710808', '#8E101D', '#FF4500', '#FFA500', '#FFD700', '#FFFF00', '#CCFF00', '#228B22', '#00FA9A', '#87CEEB', '#00BFFF', '#0000FF', '#4B0082', '#8A2BE2', '#FF00FF', '#FF1493', '#FFC0CB', '#FFFFFF', '#C0C0C0', '#808080', '#404040', '#000000', '#8B4513', '#D2691E', '#F4A460', '#3E2723', '#1A237E', '#32CD32', '#BF360C', '#4E342E', '#263238'];
 
-let players = Array.from({length: 6}, () => ({ x: -1000, y: -1000, tx: -1000, ty: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, boostEndTime: 0, boostReadyTime: 0, pwrReadyTime: 0, team: 0 }));
+// Aggiunto pwrKick per gestire l'illuminazione del tiro potente[cite: 1]
+let players = Array.from({length: 6}, () => ({ x: -1000, y: -1000, tx: -1000, ty: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, pwrKick: 0, boostEndTime: 0, boostReadyTime: 0, pwrReadyTime: 0, team: 0 }));
 let ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
 let score = [0, 0], goalMsg = { text: "", timer: 0 }, isGoalProcessed = false, gameStarted = false, isHost = false, activeCount = 1, mySlot = 0, lastSync = 0;
 let teamColors = [PRESET_COLORS[0], PRESET_COLORS[0], PRESET_COLORS[12], PRESET_COLORS[12]];
@@ -190,7 +200,7 @@ function setupGuest(conn) {
         if (data.type === 'initSlot') { mySlot = data.slot; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); }
         if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); }
         if (data.type === 'start') { gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; document.getElementById('esc-btn').style.display = "flex"; }
-        if (data.type === 'sync') { ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score; data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].boostEndTime = p.boostEndTime; players[i].boostReadyTime = p.boostReadyTime; players[i].pwrReadyTime = p.pwrReadyTime; players[i].team = p.team; } }); }
+        if (data.type === 'sync') { ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score; data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].pwrKick = p.pwrKick; players[i].boostEndTime = p.boostEndTime; players[i].boostReadyTime = p.boostReadyTime; players[i].pwrReadyTime = p.pwrReadyTime; players[i].team = p.team; } }); }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; }
         if (data.type === 'sfx') playKickSound(data.pwr);
         if (data.type === 'stop') backToLobby();
@@ -230,14 +240,17 @@ function movePlayer(p, input, idx) {
     if (d < p.r + ball.r + 8) {
         if (input.pwr && now >= p.pwrReadyTime) { 
             ball.vx = (dx/d)*6.5; ball.vy = (dy/d)*6.5; p.pwrReadyTime = now + 30000; 
+            p.pwrKick = 15; // Attivazione feedback visivo bianco SOLO per tiro potente[cite: 1]
             if (now - lastSoundTime > 200) { playKickSound(true); sendToAll({type:'sfx', pwr:true}); lastSoundTime = now; }
         }
         else if (input.kick) { 
             ball.vx = (dx/d)*4.2; ball.vy = (dy/d)*4.2; p.kick = 15; 
+            // Rimosso p.kick = 15 o logica di illuminazione da qui per il tiro normale[cite: 1]
             if (now - lastSoundTime > 200) { playKickSound(false); sendToAll({type:'sfx', pwr:false}); lastSoundTime = now; }
         }
     }
     if (p.kick > 0) p.kick--;
+    if (p.pwrKick > 0) p.pwrKick--; // Decremento timer feedback visivo[cite: 1]
 }
 
 function resetPos(full) {
@@ -264,7 +277,8 @@ function draw() {
     const ctx=document.getElementById('gameCanvas').getContext('2d'), now=Date.now(); ctx.clearRect(0,0,W,TOTAL_H); 
     for(let i=0; i<activeCount; i++){ 
         const p=players[i]; if(p.x<-500)continue; ctx.fillStyle=teamColors[p.team*2]; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.28); ctx.fill(); 
-        ctx.strokeStyle=p.kick>0?"#FFF":"#000"; ctx.lineWidth=2.5; ctx.stroke(); ctx.fillStyle=teamColors[p.team*2+1]; ctx.beginPath(); ctx.arc(p.x,p.y,8.5,0,6.28); ctx.fill(); 
+        // Modificato: il cerchio diventa bianco solo se pwrKick è attivo[cite: 1]
+        ctx.strokeStyle=p.pwrKick>0?"#FFF":"#000"; ctx.lineWidth=2.5; ctx.stroke(); ctx.fillStyle=teamColors[p.team*2+1]; ctx.beginPath(); ctx.arc(p.x,p.y,8.5,0,6.28); ctx.fill(); 
         ctx.fillStyle=(i===mySlot)?"yellow":"white"; ctx.font="bold 12px sans-serif"; ctx.textAlign="center"; ctx.fillText(playerNames[i],p.x,p.y-p.r-8); 
     } 
     ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,6.28); ctx.fill(); ctx.stroke(); 
@@ -295,7 +309,25 @@ function startGame() { if(isHost){ score=[0,0]; gameStarted=true; document.getEl
 function backToLobby() { gameStarted = false; document.getElementById('menu-overlay').style.display = "flex"; document.getElementById('esc-btn').style.display = "none"; if(isHost) { sendToAll({type: 'stop'}); refreshLobbyState(); } }
 function sendToAll(d) { connections.forEach(c => { if(c.open) c.send(d); }); }
 function togglePlayerTeam(i){ if(isHost){playerTeams[i]=1-playerTeams[i]; refreshLobbyState();}}
-function toggleFullscreen() { const c = document.getElementById('game-container'); if (!document.fullscreenElement) { if (c.requestFullscreen) c.requestFullscreen(); else if (c.webkitRequestFullscreen) c.webkitRequestFullscreen(); } else { if (document.exitFullscreen) document.exitFullscreen(); } }
+
+function toggleFullscreen() {
+    const c = document.getElementById('game-container');
+    if (!document.fullscreenElement && !document.webkitFullscreenElement) {
+        if (c.requestFullscreen) {
+            c.requestFullscreen().then(() => {
+                if (screen.orientation && screen.orientation.lock) {
+                    screen.orientation.lock('landscape').catch(() => {});
+                }
+            });
+        } else if (c.webkitRequestFullscreen) {
+            c.webkitRequestFullscreen();
+        }
+    } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+        else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+    }
+}
+
 window.addEventListener('keydown', e => {rawKeys[e.code]=true; if(e.code === 'Escape' && gameStarted) backToLobby();});
 window.addEventListener('keyup', e => rawKeys[e.code]=false);
 </script>
