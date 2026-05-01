@@ -106,7 +106,7 @@ let bannerLoaded = false, topImage = new Image();
 topImage.onload = () => { bannerLoaded = true; drawField(); };
 topImage.src = 'banner.png';
 
-// GESTIONE GAMEPAD / JOYSTICK
+// JOYSTICK API (PC & MOBILE 360°)[cite: 1]
 window.addEventListener("gamepadconnected", () => { document.getElementById('gp-indicator').innerText = "Joystick Connesso!"; });
 window.addEventListener("gamepaddisconnected", () => { document.getElementById('gp-indicator').innerText = "Joystick non rilevato"; });
 
@@ -115,70 +115,32 @@ function getGamepadInput() {
     for (let i = 0; i < gamepads.length; i++) {
         const gp = gamepads[i];
         if (!gp) continue;
-
-        // Movimento 360° levetta sinistra
-        let lx = gp.axes[0];
-        let ly = gp.axes[1];
-        const deadzone = 0.15;
+        let lx = gp.axes[0], ly = gp.axes[1], deadzone = 0.15;
         let mag = Math.sqrt(lx * lx + ly * ly);
-        
-        if (mag < deadzone) {
-            lx = 0; ly = 0;
-        } else {
-            // Normalizzazione movimento per fluidità a 360 gradi
-            lx = (lx / mag) * ((mag - deadzone) / (1 - deadzone));
-            ly = (ly / mag) * ((mag - deadzone) / (1 - deadzone));
-        }
-
-        return {
-            ax: lx,
-            ay: ly,
-            kick: gp.buttons[0].pressed || gp.buttons[2].pressed,  // A o X (PS)
-            boost: gp.buttons[4].pressed || gp.buttons[5].pressed, // Dorsali L1/R1
-            pwr: gp.buttons[1].pressed || gp.buttons[3].pressed    // B o Y (PS)
-        };
+        if (mag < deadzone) { lx = 0; ly = 0; } else { lx = (lx / mag) * ((mag - deadzone) / (1 - deadzone)); ly = (ly / mag) * ((mag - deadzone) / (1 - deadzone)); }
+        return { ax: lx, ay: ly, kick: gp.buttons[0].pressed || gp.buttons[2].pressed, boost: gp.buttons[4].pressed || gp.buttons[5].pressed, pwr: gp.buttons[1].pressed || gp.buttons[3].pressed };
     }
     return null;
 }
 
 function updateInput() {
-    let kx = 0, ky = 0; 
-    keys.kick = keys.boost = keys.pwr = false;
-
-    // Tastiera
+    let kx = 0, ky = 0; keys.kick = keys.boost = keys.pwr = false;
     if (rawKeys['ArrowLeft'] || rawKeys['KeyA']) kx--; if (rawKeys['ArrowRight'] || rawKeys['KeyD']) kx++;
     if (rawKeys['ArrowUp'] || rawKeys['KeyW']) ky--; if (rawKeys['ArrowDown'] || rawKeys['KeyS']) ky++;
     if (rawKeys['Space'] || rawKeys['KeyX']) keys.kick = true;
     if (rawKeys['KeyC'] || rawKeys['KeyQ']) keys.pwr = true;
     if (rawKeys['ShiftLeft']) keys.boost = true;
-    
-    if (kx !== 0 || ky !== 0) { 
-        let kmag = Math.sqrt(kx * kx + ky * ky); 
-        kx /= kmag; ky /= kmag; 
-    }
-
-    // Integrazione Joystick (PC e Mobile Bluetooth)
+    if (kx !== 0 || ky !== 0) { let kmag = Math.sqrt(kx * kx + ky * ky); kx /= kmag; ky /= kmag; }
     const gp = getGamepadInput();
-    if (gp) {
-        if (Math.abs(gp.ax) > 0.01 || Math.abs(gp.ay) > 0.01) {
-            kx = gp.ax;
-            ky = gp.ay;
-        }
-        if (gp.kick) keys.kick = true;
-        if (gp.boost) keys.boost = true;
-        if (gp.pwr) keys.pwr = true;
-    }
-    
-    keys.ax = kx; 
-    keys.ay = ky;
+    if (gp) { if (Math.abs(gp.ax) > 0.01 || Math.abs(gp.ay) > 0.01) { kx = gp.ax; ky = gp.ay; } if (gp.kick) keys.kick = true; if (gp.boost) keys.boost = true; if (gp.pwr) keys.pwr = true; }
+    keys.ax = kx; keys.ay = ky;
 }
 
-// FISICA DEI LIMITI CON USCITA 65% PER I GIOCATORI
+// FISICA LIMITI (65% OUT)[cite: 1]
 function checkLimits(o, isBall) {
     const limitYTop = OFFSET_TOP + 15, limitYBottom = OFFSET_TOP + H_GAME - 15;
     const goalTop = MID_Y_GAME - GOAL_SIZE_HALF, goalBottom = MID_Y_GAME + GOAL_SIZE_HALF;
     const bounceFactor = 0.54;
-
     if (isBall) {
         if (o.y - o.r < limitYTop) { o.y = limitYTop + o.r; o.vy = Math.abs(o.vy) * bounceFactor; }
         else if (o.y + o.r > limitYBottom) { o.y = limitYBottom - o.r; o.vy = -Math.abs(o.vy) * bounceFactor; }
@@ -225,32 +187,57 @@ function resolve(c1, c2, isPost = false) {
     } 
 }
 
+// GESTIONE CONNESSIONE (FIX GUEST STUCK)[cite: 1]
 const peer = new Peer();
 let connections = [];
 peer.on('open', id => {
     const joinId = new URLSearchParams(window.location.search).get('join');
-    if (joinId) { isHost = false; document.getElementById('status-text').innerText = "Connessione..."; setupGuest(peer.connect(joinId, { reliable: true })); } 
-    else { isHost = true; document.getElementById('status-text').innerHTML = `Link:<br><input type="text" id="link-input" value="${window.location.origin + window.location.pathname}?join=${id}" readonly onclick="this.select(); document.execCommand('copy');">`; document.getElementById('start-btn').style.display = "inline-block"; initColorPickers(); refreshLobbyState(); drawField(); requestAnimationFrame(gameLoop); }
+    if (joinId) { 
+        isHost = false; 
+        document.getElementById('status-text').innerText = "Connessione in corso..."; 
+        setupGuest(peer.connect(joinId, { reliable: true })); 
+    } else { 
+        isHost = true; 
+        document.getElementById('status-text').innerHTML = `Link:<br><input type="text" id="link-input" value="${window.location.origin + window.location.pathname}?join=${id}" readonly onclick="this.select(); document.execCommand('copy');">`; 
+        document.getElementById('start-btn').style.display = "inline-block"; 
+        initColorPickers(); refreshLobbyState(); drawField(); requestAnimationFrame(gameLoop); 
+    }
 });
+
 peer.on('connection', conn => {
     conn.on('open', () => {
         if (audioCtx.state === 'suspended') audioCtx.resume();
         conn.on('data', data => { 
-            if(data.type === 'join') { if (!connections.find(c => c.peer === conn.peer)) { connections.push(conn); conn.send({ type: 'initSlot', slot: connections.length, colors: teamColors, teams: playerTeams }); refreshLobbyState(); } }
+            if(data.type === 'join') { 
+                if (!connections.find(c => c.peer === conn.peer)) { 
+                    connections.push(conn); 
+                    conn.send({ type: 'initSlot', slot: connections.length, colors: teamColors, teams: playerTeams }); 
+                    refreshLobbyState(); 
+                } 
+            }
             if(data.type === 'input') { const idx = connections.indexOf(conn) + 1; allRemoteKeys[idx] = data.keys; }
         });
     });
 });
+
 function setupGuest(conn) {
     conn.on('open', () => { 
         if (audioCtx.state === 'suspended') audioCtx.resume();
-        setTimeout(() => { conn.send({ type: 'join' }); document.getElementById('status-text').innerText = "In Lobby (GUEST)"; }, 500);
+        // Feedback immediato per evitare stalli
+        document.getElementById('status-text').innerText = "Sincronizzazione...";
+        const joinInterval = setInterval(() => {
+            if (mySlot === 0) conn.send({ type: 'join' });
+            else clearInterval(joinInterval);
+        }, 800);
     });
     conn.on('data', data => {
-        if (data.type === 'initSlot') { mySlot = data.slot; teamColors = data.colors; playerTeams = data.teams; refreshLobbyState(); }
+        if (data.type === 'initSlot') { mySlot = data.slot; teamColors = data.colors; playerTeams = data.teams; refreshLobbyState(); document.getElementById('status-text').innerText = "In Lobby (GUEST)"; }
         if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; playerTeams = data.teams; refreshLobbyState(); }
         if (data.type === 'start') { gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; document.getElementById('esc-btn').style.display = "flex"; }
-        if (data.type === 'sync') { ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score; data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].boostEndTime = p.boostEndTime; players[i].boostReadyTime = p.boostReadyTime; players[i].pwrReadyTime = p.pwrReadyTime; players[i].team = p.team; } }); }
+        if (data.type === 'sync') { 
+            ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score; 
+            data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].boostEndTime = p.boostEndTime; players[i].boostReadyTime = p.boostReadyTime; players[i].pwrReadyTime = p.pwrReadyTime; players[i].team = p.team; } }); 
+        }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; }
         if (data.type === 'stop') backToLobby();
     });
@@ -271,7 +258,10 @@ function gameLoop(t) {
             for(let i=0; i<activeCount; i++) { for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); resolve(players[i], ball); posts.forEach(post => resolve(post, players[i], true)); checkLimits(players[i], false); }
             posts.forEach(p => resolve(p, ball, true)); checkLimits(ball, true);
         }
-        if (t - lastSync > 32) { sendToAll({ type: 'sync', ball, players, score }); lastSync = t; }
+        if (t - lastSync > 32) { 
+            sendToAll({ type: 'sync', ball, players: players.map(p => ({ x: p.x, y: p.y, kick: p.kick, team: p.team, boostEndTime: p.boostEndTime, boostReadyTime: p.boostReadyTime, pwrReadyTime: p.pwrReadyTime })), score }); 
+            lastSync = t; 
+        }
     } else if (!isHost && gameStarted) {
         updateInput(); ball.x += (ball.tx - ball.x) * 0.25; ball.y += (ball.ty - ball.y) * 0.25;
         for(let i=0; i<activeCount; i++) { players[i].x += (players[i].tx - players[i].x) * 0.25; players[i].y += (players[i].ty - players[i].y) * 0.25; }
@@ -281,14 +271,9 @@ function gameLoop(t) {
 
 function movePlayer(p, input) { 
     if(!p || p.x < -500 || goalMsg.timer > 0) return;
-    const now = Date.now(); 
-    let accel = (now < p.boostEndTime) ? 0.33 : 0.16;
+    const now = Date.now(); let accel = (now < p.boostEndTime) ? 0.33 : 0.16;
     if (input.boost && now >= p.boostReadyTime) { p.boostEndTime = now + 250; p.boostReadyTime = now + 10000; }
-    
-    p.vx += input.ax * accel; 
-    p.vy += input.ay * accel; 
-    p.vx *= 0.89; p.vy *= 0.89; p.x += p.vx; p.y += p.vy;
-
+    p.vx += input.ax * accel; p.vy += input.ay * accel; p.vx *= 0.89; p.vy *= 0.89; p.x += p.vx; p.y += p.vy;
     let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy);
     if (d < p.r + ball.r + 8) {
         if (input.pwr && now >= p.pwrReadyTime) { ball.vx = (dx/d)*6.5; ball.vy = (dy/d)*6.5; p.pwrReadyTime = now + 30000; playHitSound(); }
@@ -299,8 +284,9 @@ function movePlayer(p, input) {
 
 function resetPos(full) {
     isGoalProcessed = false; ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
-    const t0 = [], t1 = [];
-    for(let i=0; i<activeCount; i++) { players[i].vx = 0; players[i].vy = 0; if(full) { players[i].pwrReadyTime = 0; players[i].boostReadyTime = 0; } if(playerTeams[i] === 0) t0.push(players[i]); else t1.push(players[i]); }
+    for(let i=0; i<activeCount; i++) { players[i].vx = 0; players[i].vy = 0; if(full) { players[i].pwrReadyTime = 0; players[i].boostReadyTime = 0; } }
+    const t0 = players.filter((p,i) => i < activeCount && playerTeams[i] === 0);
+    const t1 = players.filter((p,i) => i < activeCount && playerTeams[i] === 1);
     if(t0[0]){ t0[0].x=t0[0].tx=250; t0[0].y=t0[0].ty=MID_Y_GAME; if(t0[1]){t0[1].x=t0[1].tx=120; t0[1].y=t0[1].ty=MID_Y_GAME-120;} if(t0[2]){t0[2].x=t0[2].tx=120; t0[2].y=t0[2].ty=MID_Y_GAME+120;} }
     if(t1[0]){ t1[0].x=t1[0].tx=W-250; t1[0].y=t1[0].ty=MID_Y_GAME; if(t1[1]){t1[1].x=t1[1].tx=W-120; t1[1].y=t1[1].ty=MID_Y_GAME-120;} if(t1[2]){t1[2].x=t1[2].tx=W-120; t1[2].y=t1[2].ty=MID_Y_GAME+120;} }
 }
@@ -311,7 +297,12 @@ function draw() {
     const ctx=document.getElementById('gameCanvas').getContext('2d'), now=Date.now(); ctx.clearRect(0,0,W,TOTAL_H); 
     for(let i=0; i<activeCount; i++){ const p=players[i]; if(p.x<-500)continue; ctx.fillStyle=teamColors[p.team*2]; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.28); ctx.fill(); ctx.strokeStyle=p.kick>0?"#FFF":"#000"; ctx.lineWidth=2.5; ctx.stroke(); ctx.fillStyle=teamColors[p.team*2+1]; ctx.beginPath(); ctx.arc(p.x,p.y,8.5,0,6.28); ctx.fill(); ctx.fillStyle=(i===mySlot)?"yellow":"white"; ctx.font="bold 12px sans-serif"; ctx.textAlign="center"; ctx.fillText("P"+(i+1),p.x,p.y-p.r-8); } 
     ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,6.28); ctx.fill(); ctx.stroke(); 
-    const myP=players[mySlot]; if(myP){ const bRem=Math.ceil((myP.boostReadyTime-now)/1000), pRem=Math.ceil((myP.pwrReadyTime-now)/1000); document.getElementById('timer-boost').innerText="BST: "+(bRem>0?bRem+"s":"READY"); document.getElementById('timer-pwr').innerText="PWR: "+(pRem>0?pRem+"s":"READY"); } 
+    const myP=players[mySlot]; 
+    if(myP){ 
+        const bRem=Math.ceil((myP.boostReadyTime-now)/1000); const pRem=Math.ceil((myP.pwrReadyTime-now)/1000); 
+        document.getElementById('timer-boost').innerText="BST: "+(bRem>0?bRem+"s":"READY"); 
+        document.getElementById('timer-pwr').innerText="PWR: "+(pRem>0?pRem+"s":"READY"); 
+    } 
     if(goalMsg.timer>0){ctx.font="bold 80px sans-serif"; ctx.textAlign="center"; ctx.fillStyle="white"; ctx.fillText(goalMsg.text,MID_X,MID_Y_GAME);} 
     document.getElementById('live-score').innerText=score[0]+" - "+score[1]; 
 }
