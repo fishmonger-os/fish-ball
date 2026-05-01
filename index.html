@@ -19,7 +19,6 @@
         .color-dot { width: 18px; height: 18px; border-radius: 3px; cursor: pointer; border: 1px solid rgba(255,255,255,0.2); transition: 0.2s; }
         .color-dot.active { border: 2px solid white; transform: scale(1.2); box-shadow: 0 0 8px rgba(255,255,255,0.6); }
         
-        /* CORREZIONE VISIVA SLOT */
         .player-status-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 15px 0; }
         .p-slot { opacity: 0.4; filter: grayscale(1); transition: 0.3s; padding: 8px; border-radius: 8px; border: 1px solid transparent; display: flex; align-items: center; justify-content: space-between; color: #777; font-weight: normal; }
         .p-slot.active { opacity: 1; filter: grayscale(0); color: #fff; font-weight: bold; }
@@ -231,7 +230,7 @@ peer.on('connection', conn => {
                 } 
             }
             if(data.type === 'input') { const idx = connections.indexOf(conn) + 1; allRemoteKeys[idx] = data.keys; }
-            if(data.type === 'nameUpdate') { playerNames[data.idx] = data.name; refreshLobbyState(); }
+            if(data.type === 'nameUpdate' && isHost) { playerNames[data.idx] = data.name; refreshLobbyState(); }
         });
     });
 });
@@ -258,10 +257,10 @@ function setupGuest(conn) {
 }
 
 function handleNameChange(idx) {
+    if (!isHost) return; // Solo l'host può modificare
     const newName = document.getElementById('name' + idx).value;
     playerNames[idx] = newName;
-    if (isHost) refreshLobbyState();
-    else if (connections[0]) connections[0].send({ type: 'nameUpdate', idx, name: newName });
+    refreshLobbyState();
 }
 
 function gameLoop(t) {
@@ -341,12 +340,12 @@ function refreshLobbyState() {
         const input = document.getElementById('name'+i);
         const label = document.getElementById('label'+i);
         if(el) {
-            // Aggiorna classi CSS
             el.className = 'p-slot' + (i < activeCount ? ' active' : '') + (playerTeams[i] === 0 ? ' team-0' : ' team-1') + (i === mySlot ? ' is-me' : '');
-            // Aggiorna Input Nome
             input.value = playerNames[i];
-            input.readOnly = (i !== mySlot); // Solo tu puoi cambiare il tuo nome
-            // Aggiorna etichetta "TU" o "HOST"
+            
+            // MODIFICA: Solo l'host può modificare gli input. Per i guest sono sempre readOnly.
+            input.readOnly = !isHost; 
+            
             if (i === 0) label.innerText = (mySlot === 0) ? "(TU - HOST)" : "(HOST)";
             else label.innerText = (i === mySlot) ? "(TU)" : "";
         }
