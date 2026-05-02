@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>FISHBALL 3vs3 - Fixed</title>
+    <title>FISHBALL 3vs3 - Fast Kick</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -189,7 +189,7 @@ let connections = [], guestConn = null;
 
 peer.on('open', id => {
     const joinId = new URLSearchParams(window.location.search).get('join');
-    if (joinId) { isHost = false; document.getElementById('status-text').innerText = "Connessione..."; guestConn = peer.connect(joinId, { reliable: true }); setupGuest(guestConn); } 
+    if (joinId) { isHost = false; document.getElementById('status-text').innerText = "Connessione..."; guestConn = peer.connect(joinId, { reliable: false }); setupGuest(guestConn); } 
     else { isHost = true; mySlot = 0; document.getElementById('status-text').innerHTML = `Lobby ID: <input type="text" id="link-input" value="${window.location.origin + window.location.pathname}?join=${id}" readonly onclick="this.select(); document.execCommand('copy');">`; document.getElementById('start-btn').style.display = "inline-block"; initColorPickers(); refreshLobbyState(); drawField(); requestAnimationFrame(gameLoop); }
 });
 
@@ -211,7 +211,20 @@ function setupGuest(conn) {
         if (data.type === 'initSlot') { mySlot = data.slot; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); document.getElementById('status-text').innerText = "Connesso (GUEST)"; }
         if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); }
         if (data.type === 'start') { resetPos(true); gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; document.getElementById('esc-btn').style.display = "flex"; }
-        if (data.type === 'sync') { ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score; data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].boostEndTime = p.boostEndTime; players[i].boostReadyTime = p.boostReadyTime; players[i].boostCharges = p.boostCharges; players[i].pwrReadyTime = p.pwrReadyTime; players[i].team = p.team; } }); }
+        if (data.type === 'sync') { 
+            ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score; 
+            const now = Date.now();
+            data.players.forEach((p, i) => { 
+                if(players[i]) { 
+                    players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; 
+                    players[i].boostReadyTime = now + p.boostReadyRemaining;
+                    players[i].pwrReadyTime = now + p.pwrReadyRemaining;
+                    players[i].boostCharges = p.boostCharges; 
+                    players[i].team = p.team; 
+                    players[i].boostEndTime = now + (p.boostEndTime > 0 ? 150 : 0); 
+                } 
+            }); 
+        }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; }
         if (data.type === 'stop') backToLobby();
     });
@@ -219,7 +232,6 @@ function setupGuest(conn) {
     inputLoop(); requestAnimationFrame(gameLoop);
 }
 
-/* --- LOGICA JOYSTICK AGGIORNATA --- */
 function updateGamepad() {
     const gps = navigator.getGamepads();
     const gp = gps[0] || gps[1] || gps[2] || gps[3];
@@ -228,8 +240,6 @@ function updateGamepad() {
         const deadzone = 0.15;
         if (Math.abs(ax) < deadzone) ax = 0; if (Math.abs(ay) < deadzone) ay = 0;
         if (ax !== 0 || ay !== 0) { keys.ax = ax; keys.ay = ay; }
-
-        // Mappatura: A/X (0) per Kick, B/Cerchio (1) per Power, RB/RT (5/7) per Boost
         if (gp.buttons[0].pressed) keys.kick = true;
         if (gp.buttons[1].pressed) keys.pwr = true;
         if (gp.buttons[5].pressed || gp.buttons[7].pressed) keys.boost = true;
@@ -251,22 +261,51 @@ function updateInput() {
 }
 
 function gameLoop(t) {
-    if (isHost && gameStarted) {
-        updateInput(); 
-        if (goalMsg.timer <= 0) {
-            if (!isGoalProcessed && ball.y > MID_Y_GAME-GOAL_SIZE_HALF && ball.y < MID_Y_GAME+GOAL_SIZE_HALF) {
-                if (ball.x < 42) { isGoalProcessed = true; score[1]++; goalMsg = {text: "GOAL!", timer:120}; sendToAll({type:'goal', text:"GOAL!", score}); setTimeout(() => resetPos(), 2000); }
-                else if (ball.x > W-42) { isGoalProcessed = true; score[0]++; goalMsg = {text: "GOAL!", timer:120}; sendToAll({type:'goal', text:"GOAL!", score}); setTimeout(() => resetPos(), 2000); }
+    if (gameStarted) {
+        if (isHost) {
+            const now = Date.now();
+            updateInput(); 
+            if (goalMsg.timer <= 0) {
+                if (!isGoalProcessed && ball.y > MID_Y_GAME-GOAL_SIZE_HALF && ball.y < MID_Y_GAME+GOAL_SIZE_HALF) {
+                    if (ball.x < 42) { isGoalProcessed = true; score[1]++; goalMsg = {text: "GOAL!", timer:120}; sendToAll({type:'goal', text:"GOAL!", score}); setTimeout(() => resetPos(), 2000); }
+                    else if (ball.x > W-42) { isGoalProcessed = true; score[0]++; goalMsg = {text: "GOAL!", timer:120}; sendToAll({type:'goal', text:"GOAL!", score}); setTimeout(() => resetPos(), 2000); }
+                }
+                movePlayer(players[0], keys); for(let i=1; i<activeCount; i++) if(allRemoteKeys[i]) movePlayer(players[i], allRemoteKeys[i]);
+                ball.vx *= 0.988; ball.vy *= 0.988; ball.x += ball.vx; ball.y += ball.vy;
+                for(let i=0; i<activeCount; i++) { for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); resolve(players[i], ball); posts.forEach(post => resolve(post, players[i], true)); checkLimits(players[i], false); }
+                posts.forEach(p => resolve(p, ball, true)); checkLimits(ball, true);
             }
-            movePlayer(players[0], keys); for(let i=1; i<activeCount; i++) if(allRemoteKeys[i]) movePlayer(players[i], allRemoteKeys[i]);
-            ball.vx *= 0.988; ball.vy *= 0.988; ball.x += ball.vx; ball.y += ball.vy;
-            for(let i=0; i<activeCount; i++) { for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); resolve(players[i], ball); posts.forEach(post => resolve(post, players[i], true)); checkLimits(players[i], false); }
-            posts.forEach(p => resolve(p, ball, true)); checkLimits(ball, true);
+            if (t - lastSync > 30) { 
+                sendToAll({ 
+                    type: 'sync', ball, score,
+                    players: players.map(p => ({ 
+                        x: p.x, y: p.y, kick: p.kick, team: p.team, 
+                        boostEndTime: (p.boostEndTime > now ? 1 : 0),
+                        boostReadyRemaining: Math.max(0, p.boostReadyTime - now), 
+                        boostCharges: p.boostCharges, 
+                        pwrReadyRemaining: Math.max(0, p.pwrReadyTime - now) 
+                    }))
+                }); 
+                lastSync = t; 
+            }
+        } else {
+            updateInput();
+            movePlayer(players[mySlot], keys);
+            checkLimits(players[mySlot], false);
+            ball.x += (ball.tx - ball.x) * 0.35; ball.y += (ball.ty - ball.y) * 0.35;
+            for(let i=0; i<activeCount; i++) { 
+                if(i === mySlot) {
+                    let dist = Math.sqrt((players[i].x - players[i].tx)**2 + (players[i].y - players[i].ty)**2);
+                    if(dist > 5) {
+                        players[i].x += (players[i].tx - players[i].x) * 0.1;
+                        players[i].y += (players[i].ty - players[i].y) * 0.1;
+                    }
+                    continue;
+                }
+                players[i].x += (players[i].tx - players[i].x) * 0.35; 
+                players[i].y += (players[i].ty - players[i].y) * 0.35; 
+            }
         }
-        if (t - lastSync > 30) { sendToAll({ type: 'sync', ball, players: players.map(p => ({ x: p.x, y: p.y, kick: p.kick, team: p.team, boostEndTime: p.boostEndTime, boostReadyTime: p.boostReadyTime, boostCharges: p.boostCharges, pwrReadyTime: p.pwrReadyTime })), score }); lastSync = t; }
-    } else if (!isHost && gameStarted) {
-        updateInput(); ball.x += (ball.tx - ball.x) * 0.3; ball.y += (ball.ty - ball.y) * 0.3;
-        for(let i=0; i<activeCount; i++) { players[i].x += (players[i].tx - players[i].x) * 0.3; players[i].y += (players[i].ty - players[i].y) * 0.3; }
     }
     if (goalMsg.timer > 0) goalMsg.timer--; draw(); requestAnimationFrame(gameLoop);
 }
@@ -284,7 +323,8 @@ function movePlayer(p, input) {
     let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy);
     if (d < p.r + ball.r + 8) {
         if (input.pwr && now >= p.pwrReadyTime) { ball.vx = (dx/d)*6.5; ball.vy = (dy/d)*6.5; p.pwrReadyTime = now + 30000; p.kick = 15; playHitSound(); }
-        else if (input.kick) { ball.vx = (dx/d)*4.2; ball.vy = (dy/d)*4.2; p.kick = 15; playHitSound(); }
+        // Velocità base aumentata del 5%: da 4.2 a 4.41
+        else if (input.kick) { ball.vx = (dx/d)*4.41; ball.vy = (dy/d)*4.41; p.kick = 15; playHitSound(); }
     }
     if (p.kick > 0) p.kick--;
 }
