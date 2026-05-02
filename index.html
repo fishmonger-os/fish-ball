@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>FISHBALL 3vs3 - Fast Kick</title>
+    <title>FISHBALL 3vs3 - Pirlo Edition</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -119,9 +119,9 @@ let players = Array.from({length: 6}, () => ({
     pwrReadyTime: 0, team: 0 
 }));
 
-let ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
+let ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, vz: 0, z: 0, inAir: false, r: 10, m: 1 };
 let score = [0, 0], goalMsg = { text: "", timer: 0 }, isGoalProcessed = false, gameStarted = false, isHost = false, activeCount = 1, mySlot = 0, lastSync = 0;
-const keys = { ax: 0, ay: 0, kick: false, boost: false, pwr: false }, rawKeys = {}, allRemoteKeys = {};
+const keys = { ax: 0, ay: 0, kick: false, boost: false, pwr: false, lob: false, cross: false }, rawKeys = {}, allRemoteKeys = {};
 const posts = [{x:45, y:MID_Y_GAME-GOAL_SIZE_HALF, r:5.6}, {x:45, y:MID_Y_GAME+GOAL_SIZE_HALF, r:5.6}, {x:W-45, y:MID_Y_GAME-GOAL_SIZE_HALF, r:5.6}, {x:W-45, y:MID_Y_GAME+GOAL_SIZE_HALF, r:5.6}];
 
 let bannerLoaded = false, topImage = new Image();
@@ -138,18 +138,27 @@ function checkLimits(o, isBall) {
     const limitYTop = OFFSET_TOP + 15, limitYBottom = OFFSET_TOP + H_GAME - 15;
     const goalTop = MID_Y_GAME - GOAL_SIZE_HALF, goalBottom = MID_Y_GAME + GOAL_SIZE_HALF;
     const bounceFactor = 0.54;
+
     if (isBall) {
         if (o.y - o.r < limitYTop) { o.y = limitYTop + o.r; o.vy = Math.abs(o.vy) * bounceFactor; }
         else if (o.y + o.r > limitYBottom) { o.y = limitYBottom - o.r; o.vy = -Math.abs(o.vy) * bounceFactor; }
-        if (o.x < 45 + o.r || o.x > W - 45 - o.r) {
-            if (o.y < goalTop || o.y > goalBottom) {
-                if (o.x < 45 + o.r) { o.x = 45 + o.r; o.vx = Math.abs(o.vx) * bounceFactor; }
-                else if (o.x > W - 45 - o.r) { o.x = W - 45 - o.r; o.vx = -Math.abs(o.vx) * bounceFactor; }
+        
+        // Se la palla è troppo alta (> 25), la porta "non esiste" e rimbalza come sul fondo piatto
+        let isTooHighForGoal = (o.z > 25);
+
+        if (o.x < 45 + o.r) {
+            if (isTooHighForGoal || (o.y < goalTop || o.y > goalBottom)) {
+                o.x = 45 + o.r; 
+                o.vx = Math.abs(o.vx) * bounceFactor;
             } else {
                 if (o.x < 15 + o.r) { o.x = 15 + o.r; o.vx = Math.abs(o.vx) * 0.5; }
-                else if (o.x > W - 15 - o.r) { o.x = W - 15 - o.r; o.vx = -Math.abs(o.vx) * 0.5; }
-                if (o.y < goalTop + o.r) { o.y = goalTop + o.r; o.vy = Math.abs(o.vy) * 0.5; }
-                else if (o.y > goalBottom - o.r) { o.y = goalBottom - o.r; o.vy = -Math.abs(o.vy) * 0.5; }
+            }
+        } else if (o.x > W - 45 - o.r) {
+            if (isTooHighForGoal || (o.y < goalTop || o.y > goalBottom)) {
+                o.x = W - 45 - o.r; 
+                o.vx = -Math.abs(o.vx) * bounceFactor;
+            } else {
+                if (o.x > W - 15 - o.r) { o.x = W - 15 - o.r; o.vx = -Math.abs(o.vx) * 0.5; }
             }
         }
     } else {
@@ -212,7 +221,7 @@ function setupGuest(conn) {
         if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); }
         if (data.type === 'start') { resetPos(true); gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; document.getElementById('esc-btn').style.display = "flex"; }
         if (data.type === 'sync') { 
-            ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score; 
+            ball.tx = data.ball.x; ball.ty = data.ball.y; ball.z = data.ball.z; ball.inAir = data.ball.inAir; score = data.score; 
             const now = Date.now();
             data.players.forEach((p, i) => { 
                 if(players[i]) { 
@@ -232,32 +241,29 @@ function setupGuest(conn) {
     inputLoop(); requestAnimationFrame(gameLoop);
 }
 
-function updateGamepad() {
-    const gps = navigator.getGamepads();
-    const gp = gps[0] || gps[1] || gps[2] || gps[3];
-    if (gp) {
-        let ax = gp.axes[0], ay = gp.axes[1];
-        const deadzone = 0.15;
-        if (Math.abs(ax) < deadzone) ax = 0; if (Math.abs(ay) < deadzone) ay = 0;
-        if (ax !== 0 || ay !== 0) { keys.ax = ax; keys.ay = ay; }
-        if (gp.buttons[0].pressed) keys.kick = true;
-        if (gp.buttons[1].pressed) keys.pwr = true;
-        if (gp.buttons[5].pressed || gp.buttons[7].pressed) keys.boost = true;
-        if (gp.buttons[9].pressed && gameStarted) backToLobby();
-    }
-}
-
 function updateInput() {
-    let kx = 0, ky = 0; keys.kick = keys.boost = keys.pwr = false;
+    let kx = 0, ky = 0; keys.kick = keys.boost = keys.pwr = keys.lob = keys.cross = false;
     if (document.activeElement.tagName === 'INPUT') return;
     if (rawKeys['ArrowLeft'] || rawKeys['KeyA']) kx--; if (rawKeys['ArrowRight'] || rawKeys['KeyD']) kx++;
     if (rawKeys['ArrowUp'] || rawKeys['KeyW']) ky--; if (rawKeys['ArrowDown'] || rawKeys['KeyS']) ky++;
     if (rawKeys['Space'] || rawKeys['KeyX']) keys.kick = true;
     if (rawKeys['KeyC'] || rawKeys['KeyQ']) keys.pwr = true;
+    if (rawKeys['KeyV']) keys.lob = true;
+    if (rawKeys['KeyZ']) keys.cross = true;
     if (rawKeys['ShiftLeft']) keys.boost = true;
     if (kx !== 0 || ky !== 0) { let kmag = Math.sqrt(kx * kx + ky * ky); kx /= kmag; ky /= kmag; }
     keys.ax = kx; keys.ay = ky;
-    updateGamepad();
+    const gps = navigator.getGamepads(); const gp = gps[0] || gps[1] || gps[2] || gps[3];
+    if (gp) {
+        let ax = gp.axes[0], ay = gp.axes[1]; const dz = 0.15;
+        if (Math.abs(ax) < dz) ax = 0; if (Math.abs(ay) < dz) ay = 0;
+        if (ax !== 0 || ay !== 0) { keys.ax = ax; keys.ay = ay; }
+        if (gp.buttons[0].pressed) keys.kick = true;
+        if (gp.buttons[1].pressed) keys.pwr = true;
+        if (gp.buttons[2].pressed) keys.cross = true;
+        if (gp.buttons[3].pressed) keys.lob = true;
+        if (gp.buttons[5].pressed || gp.buttons[7].pressed) keys.boost = true;
+    }
 }
 
 function gameLoop(t) {
@@ -266,18 +272,42 @@ function gameLoop(t) {
             const now = Date.now();
             updateInput(); 
             if (goalMsg.timer <= 0) {
-                if (!isGoalProcessed && ball.y > MID_Y_GAME-GOAL_SIZE_HALF && ball.y < MID_Y_GAME+GOAL_SIZE_HALF) {
-                    if (ball.x < 42) { isGoalProcessed = true; score[1]++; goalMsg = {text: "GOAL!", timer:120}; sendToAll({type:'goal', text:"GOAL!", score}); setTimeout(() => resetPos(), 2000); }
-                    else if (ball.x > W-42) { isGoalProcessed = true; score[0]++; goalMsg = {text: "GOAL!", timer:120}; sendToAll({type:'goal', text:"GOAL!", score}); setTimeout(() => resetPos(), 2000); }
+                // Goal: attivo solo se z <= 25
+                if (ball.z <= 25 && (ball.x < 42 || ball.x > W - 42)) {
+                    if (ball.y > MID_Y_GAME - GOAL_SIZE_HALF && ball.y < MID_Y_GAME + GOAL_SIZE_HALF) {
+                        if (!isGoalProcessed) {
+                            isGoalProcessed = true;
+                            if (ball.x < 42) score[1]++; else score[0]++;
+                            goalMsg = { text: "GOAL!", timer: 120 };
+                            sendToAll({ type: 'goal', text: "GOAL!", score });
+                            setTimeout(() => resetPos(), 2000);
+                        }
+                    }
                 }
+
+                if (ball.inAir) {
+                    ball.z += ball.vz; ball.vz -= 0.016; 
+                    if (ball.z <= 0) { ball.z = 0; ball.vz = Math.abs(ball.vz) * 0.44; if (ball.vz < 0.4) { ball.vz = 0; ball.inAir = false; } }
+                }
+
                 movePlayer(players[0], keys); for(let i=1; i<activeCount; i++) if(allRemoteKeys[i]) movePlayer(players[i], allRemoteKeys[i]);
-                ball.vx *= 0.988; ball.vy *= 0.988; ball.x += ball.vx; ball.y += ball.vy;
-                for(let i=0; i<activeCount; i++) { for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); resolve(players[i], ball); posts.forEach(post => resolve(post, players[i], true)); checkLimits(players[i], false); }
-                posts.forEach(p => resolve(p, ball, true)); checkLimits(ball, true);
+                
+                let friction = ball.inAir ? 0.995 : 0.988;
+                ball.vx *= friction; ball.vy *= friction; ball.x += ball.vx; ball.y += ball.vy;
+
+                for(let i=0; i<activeCount; i++) { 
+                    for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); 
+                    if (!ball.inAir || ball.z < 15) resolve(players[i], ball);
+                    posts.forEach(post => resolve(post, players[i], true)); 
+                    checkLimits(players[i], false); 
+                }
+                // Risoluzione pali: attiva solo se la palla è bassa
+                posts.forEach(p => { if(ball.z <= 25) resolve(p, ball, true); }); 
+                checkLimits(ball, true);
             }
             if (t - lastSync > 30) { 
                 sendToAll({ 
-                    type: 'sync', ball, score,
+                    type: 'sync', ball: {x: ball.x, y: ball.y, z: ball.z, inAir: ball.inAir}, score,
                     players: players.map(p => ({ 
                         x: p.x, y: p.y, kick: p.kick, team: p.team, 
                         boostEndTime: (p.boostEndTime > now ? 1 : 0),
@@ -296,14 +326,10 @@ function gameLoop(t) {
             for(let i=0; i<activeCount; i++) { 
                 if(i === mySlot) {
                     let dist = Math.sqrt((players[i].x - players[i].tx)**2 + (players[i].y - players[i].ty)**2);
-                    if(dist > 5) {
-                        players[i].x += (players[i].tx - players[i].x) * 0.1;
-                        players[i].y += (players[i].ty - players[i].y) * 0.1;
-                    }
+                    if(dist > 5) { players[i].x += (players[i].tx - players[i].x) * 0.1; players[i].y += (players[i].ty - players[i].y) * 0.1; }
                     continue;
                 }
-                players[i].x += (players[i].tx - players[i].x) * 0.35; 
-                players[i].y += (players[i].ty - players[i].y) * 0.35; 
+                players[i].x += (players[i].tx - players[i].x) * 0.35; players[i].y += (players[i].ty - players[i].y) * 0.35; 
             }
         }
     }
@@ -321,29 +347,41 @@ function movePlayer(p, input) {
     let accel = (now < p.boostEndTime) ? 0.33 : 0.16;
     p.vx += input.ax * accel; p.vy += input.ay * accel; p.vx *= 0.89; p.vy *= 0.89; p.x += p.vx; p.y += p.vy;
     let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy);
+    
     if (d < p.r + ball.r + 8) {
-        if (input.pwr && now >= p.pwrReadyTime) { ball.vx = (dx/d)*6.5; ball.vy = (dy/d)*6.5; p.pwrReadyTime = now + 30000; p.kick = 15; playHitSound(); }
-        // Velocità base aumentata del 5%: da 4.2 a 4.41
-        else if (input.kick) { ball.vx = (dx/d)*4.41; ball.vy = (dy/d)*4.41; p.kick = 15; playHitSound(); }
+        if (ball.z > 25) { }
+        else if (ball.z >= 15) { ball.vx = (dx/d) * 3; ball.vy = (dy/d) * 3; ball.vz = 0.5; p.kick = 10; playHitSound(); }
+        else { 
+            if (input.pwr && now >= p.pwrReadyTime) { ball.vx = (dx/d)*6.5; ball.vy = (dy/d)*6.5; ball.vz = 0; ball.z = 0; ball.inAir = false; p.pwrReadyTime = now + 30000; p.kick = 15; playHitSound(); }
+            else if (input.lob) { ball.vx = (dx/d)*3.65; ball.vy = (dy/d)*3.65; ball.vz = 1.35; ball.inAir = true; p.kick = 15; playHitSound(); }
+            else if (input.cross) { ball.vx = (dx/d)*3.1; ball.vy = (dy/d)*3.1; ball.vz = 0.85; ball.inAir = true; p.kick = 15; playHitSound(); }
+            else if (input.kick) { ball.vx = (dx/d)*4.41; ball.vy = (dy/d)*4.41; ball.vz = 0; ball.z = 0; ball.inAir = false; p.kick = 15; playHitSound(); }
+        }
     }
     if (p.kick > 0) p.kick--;
 }
 
 function resetPos(full) {
-    isGoalProcessed = false; ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
+    isGoalProcessed = false; ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, vz: 0, z: 0, inAir: false, r: 10, m: 1 };
     for(let i=0; i<6; i++) { if(players[i]) { players[i].vx = 0; players[i].vy = 0; if(full) { players[i].pwrReadyTime = 0; players[i].boostReadyTime = 0; players[i].boostCharges = 2; } } }
-    const t0Slots = [], t1Slots = [];
-    for(let i=0; i<activeCount; i++) { if (playerTeams[i] === 0) t0Slots.push(i); else t1Slots.push(i); }
-    if(t0Slots[0] !== undefined) { players[t0Slots[0]].x = players[t0Slots[0]].tx = 250; players[t0Slots[0]].y = players[t0Slots[0]].ty = MID_Y_GAME; }
-    if(t0Slots[1] !== undefined) { players[t0Slots[1]].x = players[t0Slots[1]].tx = 120; players[t0Slots[1]].y = players[t0Slots[1]].ty = MID_Y_GAME-120; }
-    if(t0Slots[2] !== undefined) { players[t0Slots[2]].x = players[t0Slots[2]].tx = 120; players[t0Slots[2]].y = players[t0Slots[2]].ty = MID_Y_GAME+120; }
-    if(t1Slots[0] !== undefined) { players[t1Slots[0]].x = players[t1Slots[0]].tx = W-250; players[t1Slots[0]].y = players[t1Slots[0]].ty = MID_Y_GAME; }
-    if(t1Slots[1] !== undefined) { players[t1Slots[1]].x = players[t1Slots[1]].tx = W-120; players[t1Slots[1]].y = players[t1Slots[1]].ty = MID_Y_GAME-120; }
-    if(t1Slots[2] !== undefined) { players[t1Slots[2]].x = players[t1Slots[2]].tx = W-120; players[t1Slots[2]].y = players[t1Slots[2]].ty = MID_Y_GAME+120; }
+    const t0 = [], t1 = [];
+    for(let i=0; i<activeCount; i++) { if (playerTeams[i] === 0) t0.push(i); else t1.push(i); }
+    if(t0[0] !== undefined) { players[t0[0]].x = players[t0[0]].tx = 250; players[t0[0]].y = players[t0[0]].ty = MID_Y_GAME; }
+    if(t0[1] !== undefined) { players[t0[1]].x = players[t0[1]].tx = 120; players[t0[1]].y = players[t0[1]].ty = MID_Y_GAME-120; }
+    if(t0[2] !== undefined) { players[t0[2]].x = players[t0[2]].tx = 120; players[t0[2]].y = players[t0[2]].ty = MID_Y_GAME+120; }
+    if(t1[0] !== undefined) { players[t1[0]].x = players[t1[0]].tx = W-250; players[t1[0]].y = players[t1[0]].ty = MID_Y_GAME; }
+    if(t1[1] !== undefined) { players[t1[1]].x = players[t1[1]].tx = W-120; players[t1[1]].y = players[t1[1]].ty = MID_Y_GAME-120; }
+    if(t1[2] !== undefined) { players[t1[2]].x = players[t1[2]].tx = W-120; players[t1[2]].y = players[t1[2]].ty = MID_Y_GAME+120; }
     for(let i=activeCount; i<6; i++) players[i].x = players[i].tx = -1000;
 }
 
-function drawField() { const bgCtx=document.getElementById('bgCanvas').getContext('2d'); bgCtx.fillStyle="#2e7d32"; bgCtx.fillRect(0,0,W,TOTAL_H); if(bannerLoaded) bgCtx.drawImage(topImage,0,0,W,OFFSET_TOP); const fW=W-90, sW=fW/9; for(let i=0; i<9; i++){bgCtx.fillStyle=(i%2===0)?"#2e7d32":"#388e3c"; bgCtx.fillRect(45+(i*sW),OFFSET_TOP+15,sW,H_GAME-30);} bgCtx.strokeStyle="rgba(255,255,255,0.5)"; bgCtx.lineWidth=4; bgCtx.strokeRect(45,OFFSET_TOP+15,W-90,H_GAME-30); bgCtx.strokeRect(45,MID_Y_GAME-100,80,200); bgCtx.strokeRect(W-125,MID_Y_GAME-100,80,200); bgCtx.beginPath(); bgCtx.moveTo(MID_X,OFFSET_TOP+15); bgCtx.lineTo(MID_X,OFFSET_TOP+H_GAME-15); bgCtx.stroke(); bgCtx.beginPath(); bgCtx.arc(MID_X,MID_Y_GAME,70,0,6.28); bgCtx.stroke(); bgCtx.strokeStyle="#FFF"; bgCtx.strokeRect(15,MID_Y_GAME-GOAL_SIZE_HALF,30,GOAL_SIZE_HALF*2); bgCtx.strokeRect(W-45,MID_Y_GAME-GOAL_SIZE_HALF,30,GOAL_SIZE_HALF*2); posts.forEach(p=>{bgCtx.fillStyle="#FFF"; bgCtx.beginPath(); bgCtx.arc(p.x,p.y,p.r,0,6.28); bgCtx.fill();}); }
+function drawField() { 
+    const bgCtx=document.getElementById('bgCanvas').getContext('2d'); bgCtx.fillStyle="#2e7d32"; bgCtx.fillRect(0,0,W,TOTAL_H); 
+    if(bannerLoaded) bgCtx.drawImage(topImage,0,0,W,OFFSET_TOP); 
+    const fW=W-90, sW=fW/9; for(let i=0; i<9; i++){bgCtx.fillStyle=(i%2===0)?"#2e7d32":"#388e3c"; bgCtx.fillRect(45+(i*sW),OFFSET_TOP+15,sW,H_GAME-30);} 
+    bgCtx.strokeStyle="rgba(255,255,255,0.5)"; bgCtx.lineWidth=4; bgCtx.strokeRect(45,OFFSET_TOP+15,W-90,H_GAME-30); bgCtx.strokeRect(45,MID_Y_GAME-100,80,200); bgCtx.strokeRect(W-125,MID_Y_GAME-100,80,200); bgCtx.beginPath(); bgCtx.moveTo(MID_X,OFFSET_TOP+15); bgCtx.lineTo(MID_X,OFFSET_TOP+H_GAME-15); bgCtx.stroke(); bgCtx.beginPath(); bgCtx.arc(MID_X,MID_Y_GAME,70,0,6.28); bgCtx.stroke(); bgCtx.strokeStyle="#FFF"; bgCtx.strokeRect(15,MID_Y_GAME-GOAL_SIZE_HALF,30,GOAL_SIZE_HALF*2); bgCtx.strokeRect(W-45,MID_Y_GAME-GOAL_SIZE_HALF,30,GOAL_SIZE_HALF*2); 
+    posts.forEach(p=>{bgCtx.fillStyle="#FFF"; bgCtx.beginPath(); bgCtx.arc(p.x,p.y,p.r,0,6.28); bgCtx.fill();}); 
+}
 
 function draw() { 
     const ctx=document.getElementById('gameCanvas').getContext('2d'), now=Date.now(); ctx.clearRect(0,0,W,TOTAL_H); 
@@ -355,14 +393,12 @@ function draw() {
         ctx.fillStyle=(i===mySlot)?"yellow":"white"; ctx.font="bold 12px sans-serif"; ctx.textAlign="center"; 
         ctx.fillText(playerNames[i],p.x,p.y-p.r-8); 
     } 
-    ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(ball.x,ball.y,ball.r,0,6.28); ctx.fill(); 
-    ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.stroke(); 
-    const myP=players[mySlot]; 
-    if(myP && gameStarted){ 
-        let bText = (myP.boostCharges > 0) ? "BST: x" + myP.boostCharges : "BST: " + Math.ceil((myP.boostReadyTime - now)/1000) + "s";
-        document.getElementById('timer-boost').innerText = bText; 
-        const pRem=Math.ceil((myP.pwrReadyTime-now)/1000); 
-        document.getElementById('timer-pwr').innerText="PWR: "+(pRem>0?pRem+"s":"READY"); 
+    let vR = ball.r; if (ball.z > 0) { vR = ball.r * (1 + Math.min(0.2, ball.z / 250)); ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r * 0.8, 0, 6.28); ctx.fill(); }
+    ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y - ball.z, vR, 0, 6.28); ctx.fill(); ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.stroke(); 
+    const myP=players[mySlot]; if(myP && gameStarted){ 
+        let bT = (myP.boostCharges > 0) ? "BST: x" + myP.boostCharges : "BST: " + Math.ceil((myP.boostReadyTime - now)/1000) + "s";
+        document.getElementById('timer-boost').innerText = bT; 
+        const pR=Math.ceil((myP.pwrReadyTime-now)/1000); document.getElementById('timer-pwr').innerText="PWR: "+(pR>0?pR+"s":"READY"); 
     } 
     if(goalMsg.timer>0){ctx.font="bold 80px sans-serif"; ctx.textAlign="center"; ctx.fillStyle="white"; ctx.fillText(goalMsg.text,MID_X,MID_Y_GAME);} 
     document.getElementById('live-score').innerText=score[0]+" - "+score[1]; 
