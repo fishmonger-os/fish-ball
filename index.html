@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>FISHBALL 3vs3 - Fixed Version</title>
+    <title>FISHBALL 2D PRO - Haxball Physics</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -33,6 +33,8 @@
         .ui-bottom-right { position: absolute; bottom: 30px; right: 30px; text-align: right; pointer-events: none; z-index: 5; font-family: monospace; }
         #live-score { font-size: 3.5em; font-weight: 900; line-height: 1; text-shadow: 2px 2px 8px rgba(0,0,0,0.7); }
         .timer-display { font-size: 2em; font-weight: 900; margin-bottom: 10px; text-shadow: 3px 3px 6px rgba(0,0,0,0.8); transition: color 0.2s; letter-spacing: 1px; }
+        #kick-bar-container { width: 100px; height: 10px; background: #444; border: 1px solid #fff; margin-top: 5px; display: none; }
+        #kick-bar-fill { height: 100%; width: 0%; background: #ffff00; }
         input#link-input { background: #1a1a1a; color: #00ff00; border: 1px solid #333; padding: 10px; width: 90%; margin-top: 10px; cursor: pointer; border-radius: 5px; font-family: monospace; text-align: center; }
     </style>
 </head>
@@ -44,7 +46,7 @@
         <canvas id="gameCanvas" width="956" height="720"></canvas>
         <div id="menu-overlay">
             <div class="lobby-box">
-                <h1 style="margin:0; color:#4CAF50; letter-spacing: 2px; font-size: 1.5em;">FISHBALL 3vs3</h1>
+                <h1 style="margin:0; color:#4CAF50; letter-spacing: 2px; font-size: 1.5em;">FISHBALL 2D PRO</h1>
                 <div id="status-text" style="margin-bottom: 10px; font-size: 0.9em;">Inizializzazione...</div>
                 <button id="fs-btn" onclick="toggleFullscreen()">ADATTA SCHERMO</button>
                 <div class="team-settings" id="host-controls" style="display:none;">
@@ -64,7 +66,7 @@
         </div>
         <div class="ui-bottom-right">
             <div id="timer-boost" class="timer-display"></div>
-            <div id="timer-pwr" class="timer-display"></div>
+            <div id="kick-bar-container"><div id="kick-bar-fill"></div></div>
             <div id="live-score">0 - 0</div>
         </div>
     </div>
@@ -98,13 +100,13 @@ const MID_X = W / 2, MID_Y_GAME = OFFSET_TOP + (H_GAME / 2), GOAL_SIZE_HALF = 68
 let players = Array.from({length: 6}, () => ({ 
     x: -1000, y: -1000, tx: -1000, ty: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, 
     boostRemaining: 400, boostReadyTime: 0, isBoosting: false,
-    pwrReadyTime: 0, team: 0 
+    kickCharge: 0, kickStartTime: 0, shotBufferTime: 0, bufferedCharge: 0, 
+    wasKickBasePressed: false, team: 0
 }));
 
-// Inizializzazione corretta della palla per evitare invisibilità iniziale
-let ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, tz: 0, vx: 0, vy: 0, vz: 0, z: 0, inAir: false, r: 10, m: 1 };
+let ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
 let score = [0, 0], goalMsg = { text: "", timer: 0 }, isGoalProcessed = false, gameStarted = false, isHost = false, activeCount = 1, mySlot = 0, lastSync = 0;
-const keys = { ax: 0, ay: 0, kick: false, boost: false, pwr: false, lob: false, cross: false }, rawKeys = {}, allRemoteKeys = {};
+const keys = { ax: 0, ay: 0, kickBase: false, kickCharge: false, boost: false }, rawKeys = {}, allRemoteKeys = {};
 const posts = [{x:45, y:MID_Y_GAME-GOAL_SIZE_HALF, r:5.6}, {x:45, y:MID_Y_GAME+GOAL_SIZE_HALF, r:5.6}, {x:W-45, y:MID_Y_GAME-GOAL_SIZE_HALF, r:5.6}, {x:W-45, y:MID_Y_GAME+GOAL_SIZE_HALF, r:5.6}];
 
 let bannerLoaded = false, topImage = new Image();
@@ -124,12 +126,11 @@ function checkLimits(o, isBall) {
     if (isBall) {
         if (o.y - o.r < limitYTop) { o.y = limitYTop + o.r; o.vy = Math.abs(o.vy) * bounceFactor; }
         else if (o.y + o.r > limitYBottom) { o.y = limitYBottom - o.r; o.vy = -Math.abs(o.vy) * bounceFactor; }
-        let isTooHighForGoal = (o.z > 25);
         if (o.x < 45 + o.r) {
-            if (isTooHighForGoal || (o.y < goalTop || o.y > goalBottom)) { o.x = 45 + o.r; o.vx = Math.abs(o.vx) * bounceFactor; }
+            if (o.y < goalTop || o.y > goalBottom) { o.x = 45 + o.r; o.vx = Math.abs(o.vx) * bounceFactor; }
             else { if (o.y < goalTop + o.r) { o.y = goalTop + o.r; } if (o.y > goalBottom - o.r) { o.y = goalBottom - o.r; } }
         } else if (o.x > W - 45 - o.r) {
-            if (isTooHighForGoal || (o.y < goalTop || o.y > goalBottom)) { o.x = W - 45 - o.r; o.vx = -Math.abs(o.vx) * bounceFactor; }
+            if (o.y < goalTop || o.y > goalBottom) { o.x = W - 45 - o.r; o.vx = -Math.abs(o.vx) * bounceFactor; }
             else { if (o.y < goalTop + o.r) { o.y = goalTop + o.r; } if (o.y > goalBottom - o.r) { o.y = goalBottom - o.r; } }
         }
     } else {
@@ -191,9 +192,9 @@ function setupGuest(conn) {
         if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); }
         if (data.type === 'start') { resetPos(true); gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; document.getElementById('esc-btn').style.display = "flex"; }
         if (data.type === 'sync') { 
-            ball.tx = data.ball.x; ball.ty = data.ball.y; ball.tz = data.ball.z; ball.inAir = data.ball.inAir; score = data.score; 
+            ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score; 
             const now = Date.now();
-            data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].boostReadyTime = now + p.boostReadyRemaining; players[i].boostRemaining = p.boostRemaining; players[i].isBoosting = p.isBoosting; players[i].pwrReadyTime = now + p.pwrReadyRemaining; players[i].team = p.team; } }); 
+            data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].boostReadyTime = now + p.boostReadyRemaining; players[i].boostRemaining = p.boostRemaining; players[i].isBoosting = p.isBoosting; players[i].team = p.team; players[i].kickCharge = p.kickCharge; } }); 
         }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; }
         if (data.type === 'stop') backToLobby();
@@ -203,22 +204,25 @@ function setupGuest(conn) {
 }
 
 function updateInput() {
-    let kx = 0, ky = 0; keys.kick = keys.boost = keys.pwr = keys.lob = keys.cross = false;
+    let kx = 0, ky = 0; keys.kickBase = keys.kickCharge = keys.boost = false;
     if (document.activeElement.tagName === 'INPUT') return;
     if (rawKeys['ArrowLeft'] || rawKeys['KeyA']) kx--; if (rawKeys['ArrowRight'] || rawKeys['KeyD']) kx++;
     if (rawKeys['ArrowUp'] || rawKeys['KeyW']) ky--; if (rawKeys['ArrowDown'] || rawKeys['KeyS']) ky++;
-    if (rawKeys['Space'] || rawKeys['KeyX']) keys.kick = true;
-    if (rawKeys['KeyC'] || rawKeys['KeyQ']) keys.pwr = true;
-    if (rawKeys['KeyV']) keys.lob = true;
-    if (rawKeys['KeyZ']) keys.cross = true;
+    
+    if (rawKeys['Space']) keys.kickBase = true; 
+    if (rawKeys['KeyC']) keys.kickCharge = true; 
     if (rawKeys['ShiftLeft']) keys.boost = true;
+
     if (kx !== 0 || ky !== 0) { let kmag = Math.sqrt(kx * kx + ky * ky); kx /= kmag; ky /= kmag; }
     keys.ax = kx; keys.ay = ky;
+
     const gps = navigator.getGamepads(); const gp = gps[0] || gps[1] || gps[2] || gps[3];
     if (gp) {
         let ax = gp.axes[0], ay = gp.axes[1]; const dz = 0.15; if (Math.abs(ax) < dz) ax = 0; if (Math.abs(ay) < dz) ay = 0;
         if (ax !== 0 || ay !== 0) { keys.ax = ax; keys.ay = ay; }
-        if (gp.buttons[0].pressed) keys.kick = true; if (gp.buttons[1].pressed) keys.pwr = true; if (gp.buttons[2].pressed) keys.cross = true; if (gp.buttons[3].pressed) keys.lob = true; if (gp.buttons[5].pressed || gp.buttons[7].pressed) keys.boost = true;
+        if (gp.buttons[0].pressed) keys.kickBase = true; 
+        if (gp.buttons[1].pressed) keys.kickCharge = true; 
+        if (gp.buttons[5].pressed || gp.buttons[7].pressed) keys.boost = true;
     }
 }
 
@@ -229,67 +233,93 @@ function gameLoop(t) {
         if (isHost) {
             const now = Date.now(); updateInput(); 
             if (goalMsg.timer <= 0) {
-                if (ball.z <= 25 && (ball.x < 33 || ball.x > W - 33)) { 
+                if (ball.x < 33 || ball.x > W - 33) { 
                     if (ball.y > MID_Y_GAME - GOAL_SIZE_HALF && ball.y < MID_Y_GAME + GOAL_SIZE_HALF) { 
-                        if (!isGoalProcessed) { isGoalProcessed = true; if (ball.x < 33) score[1]++; else score[0]++; goalMsg = { text: "GOAL!", timer: 120 }; ball.vx = 0; ball.vy = 0; ball.vz = 0; sendToAll({ type: 'goal', text: "GOAL!", score }); setTimeout(() => resetPos(), 2000); } 
+                        if (!isGoalProcessed) { isGoalProcessed = true; if (ball.x < 33) score[1]++; else score[0]++; goalMsg = { text: "GOAL!", timer: 120 }; ball.vx = 0; ball.vy = 0; sendToAll({ type: 'goal', text: "GOAL!", score }); setTimeout(() => resetPos(), 2000); } 
                     } 
                 }
                 if (!isGoalProcessed) {
-                    if (ball.inAir) { ball.z += ball.vz; ball.vz -= 0.016; if (ball.z <= 0) { ball.z = 0; ball.vz = Math.abs(ball.vz) * 0.44; if (ball.vz < 0.4) { ball.vz = 0; ball.inAir = false; } } }
                     movePlayer(players[0], keys, dt); for(let i=1; i<activeCount; i++) if(allRemoteKeys[i]) movePlayer(players[i], allRemoteKeys[i], dt);
-                    let friction = ball.inAir ? 0.995 : 0.988; ball.vx *= friction; ball.vy *= friction; ball.x += ball.vx; ball.y += ball.vy;
-                    for(let i=0; i<activeCount; i++) { for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); if (!ball.inAir || ball.z < 15) resolve(players[i], ball); posts.forEach(post => resolve(post, players[i], true)); checkLimits(players[i], false); }
-                    posts.forEach(p => { if(ball.z <= 25) resolve(p, ball, true); }); checkLimits(ball, true);
+                    // FRIZIONE AGGIORNATA
+                    let friction = 0.9908; ball.vx *= friction; ball.vy *= friction; ball.x += ball.vx; ball.y += ball.vy;
+                    for(let i=0; i<activeCount; i++) { for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); resolve(players[i], ball); posts.forEach(post => resolve(post, players[i], true)); checkLimits(players[i], false); }
+                    posts.forEach(p => resolve(p, ball, true)); checkLimits(ball, true);
                 }
             }
-            if (t - lastSync > 30) { sendToAll({ type: 'sync', ball: {x: ball.x, y: ball.y, z: ball.z, inAir: ball.inAir}, score, players: players.map(p => ({ x: p.x, y: p.y, kick: p.kick, team: p.team, boostReadyRemaining: Math.max(0, p.boostReadyTime - now), boostRemaining: p.boostRemaining, isBoosting: p.isBoosting, pwrReadyRemaining: Math.max(0, p.pwrReadyTime - now) })) }); lastSync = t; }
+            if (t - lastSync > 30) { sendToAll({ type: 'sync', ball: {x: ball.x, y: ball.y}, score, players: players.map(p => ({ x: p.x, y: p.y, kick: p.kick, team: p.team, boostReadyRemaining: Math.max(0, p.boostReadyTime - now), boostRemaining: p.boostRemaining, isBoosting: p.isBoosting, kickCharge: p.kickCharge })) }); lastSync = t; }
         } else {
             updateInput(); movePlayer(players[mySlot], keys, dt); checkLimits(players[mySlot], false);
-            // Sincronizzazione fluida della palla per i Guest
-            ball.x += (ball.tx - ball.x) * 0.35; 
-            ball.y += (ball.ty - ball.y) * 0.35;
-            ball.z += (ball.tz - ball.z) * 0.35; // Correzione altezza palla
-            
-            for(let i=0; i<activeCount; i++) { 
-                if(i === mySlot) { 
-                    let dist = Math.sqrt((players[i].x - players[i].tx)**2 + (players[i].y - players[i].ty)**2); 
-                    if(dist > 5) { players[i].x += (players[i].tx - players[i].x) * 0.1; players[i].y += (players[i].ty - players[i].y) * 0.1; } 
-                    continue; 
-                } 
-                players[i].x += (players[i].tx - players[i].x) * 0.35; 
-                players[i].y += (players[i].ty - players[i].y) * 0.35; 
-            }
+            ball.x += (ball.tx - ball.x) * 0.35; ball.y += (ball.ty - ball.y) * 0.35;
+            for(let i=0; i<activeCount; i++) { if(i === mySlot) { let dist = Math.sqrt((players[i].x - players[i].tx)**2 + (players[i].y - players[i].ty)**2); if(dist > 5) { players[i].x += (players[i].tx - players[i].x) * 0.1; players[i].y += (players[i].ty - players[i].y) * 0.1; } continue; } players[i].x += (players[i].tx - players[i].x) * 0.35; players[i].y += (players[i].ty - players[i].y) * 0.35; }
         }
     }
     if (goalMsg.timer > 0) goalMsg.timer--; draw(); requestAnimationFrame(gameLoop);
 }
 
+function executeShot(p, dx, dy, d, power) {
+    ball.vx = (dx/d) * power; 
+    ball.vy = (dy/d) * power;
+    p.kick = 15; 
+    p.shotBufferTime = 0; // Pulisce buffer
+    playHitSound();
+}
+
 function movePlayer(p, input, dt) { 
     if(!p || p.x < -500 || goalMsg.timer > 0) return;
     const now = Date.now(); p.isBoosting = false;
+    
     if (input.boost && now >= p.boostReadyTime && p.boostRemaining > 0) { p.isBoosting = true; p.boostRemaining -= dt; if (p.boostRemaining <= 0) { p.boostRemaining = 0; p.boostReadyTime = now + 12000; } } 
     if (now >= p.boostReadyTime && p.boostRemaining <= 0) { p.boostRemaining = 400; }
     let accel = p.isBoosting ? 0.33 : 0.16; p.vx += input.ax * accel; p.vy += input.ay * accel; p.vx *= 0.89; p.vy *= 0.89; p.x += p.vx; p.y += p.vy;
+    
     let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy);
-    if (d < p.r + ball.r + 8) {
-        if (ball.z > 25) { }
-        else if (ball.z >= 15) { ball.vx = (dx/d) * 3; ball.vy = (dy/d) * 3; ball.vz = 0.5; p.kick = 10; playHitSound(); }
-        else { 
-            const inAreaSX = (ball.x >= 45 - ball.r && ball.x <= 125 + ball.r && ball.y >= MID_Y_GAME - 100 - ball.r && ball.y <= MID_Y_GAME + 100 + ball.r);
-            const inAreaDX = (ball.x >= W - 125 - ball.r && ball.x <= W - 45 + ball.r && ball.y >= MID_Y_GAME - 100 - ball.r && ball.y <= MID_Y_GAME + 100 + ball.r);
-            const isBallInArea = inAreaSX || inAreaDX;
-            if (input.pwr && now >= p.pwrReadyTime) { ball.vx = (dx/d)*6.17; ball.vy = (dy/d)*6.17; ball.vz = 0; ball.z = 0; ball.inAir = false; p.pwrReadyTime = now + 30000; p.kick = 15; playHitSound(); }
-            else if (input.lob && !isBallInArea) { ball.vx = (dx/d)*3.65; ball.vy = (dy/d)*3.65; ball.vz = 1.35; ball.inAir = true; p.kick = 15; playHitSound(); }
-            else if (input.cross && !isBallInArea) { ball.vx = (dx/d)*3.3; ball.vy = (dy/d)*3.3; ball.vz = 0.78; ball.inAir = true; p.kick = 15; playHitSound(); }
-            else if (input.kick) { ball.vx = (dx/d)*4.41; ball.vy = (dy/d)*4.41; ball.vz = 0; ball.z = 0; ball.inAir = false; p.kick = 15; playHitSound(); }
+    let inRange = d < p.r + ball.r + 12;
+
+    // LOGICA HAXBALL: Reset tiro per evitare il "tiro automatico"
+    if (input.kickBase) {
+        if (!p.wasKickBasePressed) { // Solo primo tocco del tasto
+            if (inRange) {
+                executeShot(p, dx, dy, d, 4.41);
+            } else {
+                p.shotBufferTime = now + 250;
+                p.bufferedCharge = 4.41;
+            }
+        }
+        p.wasKickBasePressed = true;
+    } else {
+        p.wasKickBasePressed = false;
+    }
+
+    // TASTO C: CARICAMENTO (Opzionale)
+    if (input.kickCharge) {
+        if (p.kickStartTime === 0) p.kickStartTime = now;
+        p.kickCharge = Math.min(1, (now - p.kickStartTime) / 800); 
+    } else {
+        if (p.kickStartTime > 0) {
+            let finalPower = 4.41 + (p.kickCharge * 2.2);
+            if (inRange) { executeShot(p, dx, dy, d, finalPower); } 
+            else { p.shotBufferTime = now + 400; p.bufferedCharge = finalPower; }
+            p.kickStartTime = 0; p.kickCharge = 0;
         }
     }
+
+    // Controllo Buffer
+    if (p.shotBufferTime > now && inRange) {
+        executeShot(p, dx, dy, d, p.bufferedCharge);
+        p.shotBufferTime = 0;
+    }
+
     if (p.kick > 0) p.kick--;
 }
 
 function resetPos(full) {
-    isGoalProcessed = false; ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, tz: 0, vx: 0, vy: 0, vz: 0, z: 0, inAir: false, r: 10, m: 1 };
-    for(let i=0; i<6; i++) { if(players[i]) { players[i].vx = 0; players[i].vy = 0; if(full) { players[i].pwrReadyTime = 0; players[i].boostReadyTime = 0; players[i].boostRemaining = 400; } } }
+    isGoalProcessed = false; ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
+    for(let i=0; i<6; i++) { if(players[i]) { 
+        players[i].vx = 0; players[i].vy = 0; 
+        players[i].kickCharge = 0; players[i].kickStartTime = 0; 
+        players[i].shotBufferTime = 0; players[i].wasKickBasePressed = false;
+        if(full) { players[i].boostReadyTime = 0; players[i].boostRemaining = 400; } 
+    } }
     const t0 = [], t1 = []; for(let i=0; i<activeCount; i++) { if (playerTeams[i] === 0) t0.push(i); else t1.push(i); }
     if(t0[0] !== undefined) { players[t0[0]].x = players[t0[0]].tx = 250; players[t0[0]].y = players[t0[0]].ty = MID_Y_GAME; }
     if(t0[1] !== undefined) { players[t0[1]].x = players[t0[1]].tx = 120; players[t0[1]].y = players[t0[1]].ty = MID_Y_GAME-120; }
@@ -315,33 +345,21 @@ function draw() {
         ctx.strokeStyle=p.kick>0?"#FFF":"#000"; ctx.lineWidth=2.5; ctx.stroke(); 
         ctx.fillStyle=teamColors[p.team*2]; ctx.beginPath(); ctx.arc(p.x,p.y,11.2,0,6.28); ctx.fill(); 
         ctx.fillStyle=(i===mySlot)?"yellow":"white"; ctx.font="bold 12px sans-serif"; ctx.textAlign="center"; ctx.fillText(playerNames[i],p.x,p.y-p.r-8); 
+        if(i === mySlot && p.kickCharge > 0) { 
+            ctx.strokeStyle="#ffff00"; ctx.lineWidth=3; ctx.beginPath(); 
+            ctx.arc(p.x,p.y,p.r+4, 0, (Math.PI*2)*p.kickCharge); ctx.stroke(); 
+        }
     } 
-
-    // DISEGNO PALLA OTTIMIZZATO
-    let vR = ball.r; 
-    if (ball.z > 0) { 
-        vR = ball.r * (1 + Math.min(0.2, ball.z / 250)); 
-        ctx.fillStyle = "rgba(0,0,0,0.25)"; 
-        ctx.beginPath(); 
-        ctx.arc(ball.x, ball.y, ball.r * 0.8, 0, 6.28); 
-        ctx.fill(); 
-    }
-    ctx.fillStyle = "#FFFFFF"; // Palla bianca forzata
-    ctx.beginPath(); 
-    ctx.arc(ball.x, ball.y - ball.z, vR, 0, 6.28); 
-    ctx.fill(); 
-    ctx.strokeStyle = "#000000"; 
-    ctx.lineWidth = 2; 
-    ctx.stroke(); 
-
+    ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.28); ctx.fill(); ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.stroke(); 
     const myP=players[mySlot]; 
     if(myP && gameStarted){ 
-        const boostEl = document.getElementById('timer-boost'), pwrEl = document.getElementById('timer-pwr');
+        const boostEl = document.getElementById('timer-boost');
         if (now >= myP.boostReadyTime) { let perc = Math.max(0, Math.ceil((myP.boostRemaining / 400) * 100)); boostEl.innerText = "BST: " + perc + "%"; boostEl.style.color = "#00FF00"; } 
         else { const bR = Math.max(0, Math.ceil((myP.boostReadyTime - now) / 1000)); boostEl.innerText = "BST: " + bR + "s"; boostEl.style.color = "white"; }
-        const pR = Math.ceil((myP.pwrReadyTime - now) / 1000);
-        if (pR <= 0) { pwrEl.innerText = "PWR: READY"; pwrEl.style.color = "#ffff00"; } 
-        else { pwrEl.innerText = "PWR: " + pR + "s"; pwrEl.style.color = "white"; }
+        const barContainer = document.getElementById('kick-bar-container');
+        const barFill = document.getElementById('kick-bar-fill');
+        if(myP.kickCharge > 0) { barContainer.style.display = 'block'; barFill.style.width = (myP.kickCharge * 100) + '%'; }
+        else { barContainer.style.display = 'none'; }
     } 
     if(goalMsg.timer>0){ctx.font="bold 80px sans-serif"; ctx.textAlign="center"; ctx.fillStyle="white"; ctx.fillText(goalMsg.text,MID_X,MID_Y_GAME);} 
     document.getElementById('live-score').innerText=score[0]+" - "+score[1]; 
