@@ -72,6 +72,7 @@
     </div>
 
 <script>
+// --- CONFIGURAZIONE E AUDIO (DALL'ORIGINALE) ---
 const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
 if (isMobile) document.getElementById('fs-btn').style.display = 'block';
 
@@ -94,18 +95,20 @@ let teamColors = [PRESET_COLORS[0], PRESET_COLORS[0], PRESET_COLORS[12], PRESET_
 let playerTeams = [0, 1, 0, 1, 0, 1];
 let playerNames = ["P1", "P2", "P3", "P4", "P5", "P6"];
 
-const W = 956, OFFSET_TOP = 130, TOTAL_H = 720, H_GAME = TOTAL_H - OFFSET_TOP - 20; 
-const MID_X = W / 2, MID_Y_GAME = OFFSET_TOP + (H_GAME / 2), GOAL_SIZE_HALF = 68; 
+const W = 956, OFFSET_TOP = 130, TOTAL_H = 720, H_GAME = TOTAL_H - OFFSET_TOP - 20;
+const MID_X = W / 2, MID_Y_GAME = OFFSET_TOP + (H_GAME / 2), GOAL_SIZE_HALF = 68;
 
+// --- STATO GIOCO ---
 let players = Array.from({length: 6}, () => ({ 
     x: -1000, y: -1000, tx: -1000, ty: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, 
-    boostRemaining: 400, boostReadyTime: 0, isBoosting: false,
-    kickCharge: 0, kickStartTime: 0, shotBufferTime: 0, bufferedCharge: 0, 
-    wasKickBasePressed: false, team: 0
+    boostRemaining: 1000, // MODIFICA: Boost a 1 secondo
+    boostReadyTime: 0, isBoosting: false,
+    kickCharge: 0, kickStartTime: 0, shotBufferTime: 0, bufferedCharge: 0, wasKickBasePressed: false, team: 0
 }));
 
 let ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
 let score = [0, 0], goalMsg = { text: "", timer: 0 }, isGoalProcessed = false, gameStarted = false, isHost = false, activeCount = 1, mySlot = 0, lastSync = 0;
+let pendingInputs = [], inputSequenceNumber = 0;
 const keys = { ax: 0, ay: 0, kickBase: false, kickCharge: false, boost: false }, rawKeys = {}, allRemoteKeys = {};
 const posts = [{x:45, y:MID_Y_GAME-GOAL_SIZE_HALF, r:5.6}, {x:45, y:MID_Y_GAME+GOAL_SIZE_HALF, r:5.6}, {x:W-45, y:MID_Y_GAME-GOAL_SIZE_HALF, r:5.6}, {x:W-45, y:MID_Y_GAME+GOAL_SIZE_HALF, r:5.6}];
 
@@ -113,64 +116,64 @@ let bannerLoaded = false, topImage = new Image();
 topImage.onload = () => { bannerLoaded = true; drawField(); };
 topImage.src = 'banner.png';
 
-function handleNameChange(i) {
-    const newName = document.getElementById('name' + i).value || "P" + (i + 1);
-    if (isHost) { playerNames[i] = newName; refreshLobbyState(); } 
-    else if (i === mySlot) { playerNames[i] = newName; if(guestConn && guestConn.open) guestConn.send({ type: 'updateName', slot: mySlot, name: newName }); }
-}
-
+// --- FISICA E LIMITI (RECUPERO ORIGINALE + SIMMETRIA) ---
 function checkLimits(o, isBall) {
     const limitYTop = OFFSET_TOP + 15, limitYBottom = OFFSET_TOP + H_GAME - 15;
     const goalTop = MID_Y_GAME - GOAL_SIZE_HALF, goalBottom = MID_Y_GAME + GOAL_SIZE_HALF;
     const bounceFactor = 0.54;
+    
     if (isBall) {
         if (o.y - o.r < limitYTop) { o.y = limitYTop + o.r; o.vy = Math.abs(o.vy) * bounceFactor; }
         else if (o.y + o.r > limitYBottom) { o.y = limitYBottom - o.r; o.vy = -Math.abs(o.vy) * bounceFactor; }
+        
         if (o.x < 45 + o.r) {
             if (o.y < goalTop || o.y > goalBottom) { o.x = 45 + o.r; o.vx = Math.abs(o.vx) * bounceFactor; }
-            else { if (o.y < goalTop + o.r) { o.y = goalTop + o.r; } if (o.y > goalBottom - o.r) { o.y = goalBottom - o.r; } }
+            else { if (o.y < goalTop + o.r) o.y = goalTop + o.r; if (o.y > goalBottom - o.r) o.y = goalBottom - o.r; }
         } else if (o.x > W - 45 - o.r) {
             if (o.y < goalTop || o.y > goalBottom) { o.x = W - 45 - o.r; o.vx = -Math.abs(o.vx) * bounceFactor; }
-            else { if (o.y < goalTop + o.r) { o.y = goalTop + o.r; } if (o.y > goalBottom - o.r) { o.y = goalBottom - o.r; } }
+            else { if (o.y < goalTop + o.r) o.y = goalTop + o.r; if (o.y > goalBottom - o.r) o.y = goalBottom - o.r; }
         }
     } else {
-        const penetration = o.r * 0.35; 
-        if (o.y < limitYTop + penetration) { o.y = limitYTop + penetration; o.vy = 0; }
-        else if (o.y > limitYBottom - penetration) { o.y = limitYBottom - penetration; o.vy = 0; }
-        if (o.x < 45 + penetration) {
-            if (o.y < goalTop || o.y > goalBottom) o.x = 45 + penetration;
-            else { if (o.x < 15 + o.r) o.x = 15 + o.r; if (o.y < goalTop + o.r) o.y = goalTop + o.r; if (o.y > goalBottom - o.r) o.y = goalBottom - o.r; }
-        } else if (o.x > W - 45 - penetration) {
-            if (o.y < goalTop || o.y > goalBottom) o.x = W - 45 - penetration;
-            else { if (o.x > W - 15 - o.r) o.x = W - 15 - o.r; if (o.y < goalTop + o.r) o.y = goalTop + o.r; if (o.y > goalBottom - o.r) o.y = goalBottom - o.r; }
+        const margin = o.r * 0.35;
+        if (o.y < limitYTop + margin) { o.y = limitYTop + margin; o.vy = 0; }
+        else if (o.y > limitYBottom - margin) { o.y = limitYBottom - margin; o.vy = 0; }
+        
+        if (o.x < 45 + margin) {
+            if (o.y < goalTop || o.y > goalBottom) o.x = 45 + margin;
+            else { if (o.x < 15 + o.r) o.x = 15 + o.r; if (o.y < goalTop + margin) o.y = goalTop + margin; if (o.y > goalBottom - margin) o.y = goalBottom - margin; }
+        } else if (o.x > W - 45 - margin) {
+            if (o.y < goalTop || o.y > goalBottom) o.x = W - 45 - margin;
+            else { if (o.x > W - 15 - o.r) o.x = W - 15 - o.r; if (o.y < goalTop + margin) o.y = goalTop + margin; if (o.y > goalBottom - margin) o.y = goalBottom - margin; }
         }
     }
 }
 
 function resolve(c1, c2, isPost = false) { 
-    if (!c1 || !c2 || c1.x < -500 || c2.x < -500) return; 
-    let dx = c2.x - c1.x, dy = c2.y - c1.y, dist = Math.sqrt(dx*dx + dy*dy); 
-    if (dist < c1.r + c2.r && dist > 0) { 
-        let nx = dx / dist, ny = dy / dist, overlap = (c1.r + c2.r) - dist; 
-        if (isPost) { c2.x += nx * overlap; c2.y += ny * overlap; } 
-        else { c1.x -= nx * overlap * 0.5; c1.y -= ny * overlap * 0.5; c2.x += nx * overlap * 0.5; c2.y += ny * overlap * 0.5; } 
-        let relVX = c2.vx - (isPost ? 0 : c1.vx), relVY = c2.vy - (isPost ? 0 : c1.vy), dot = relVX*nx + relVY*ny; 
+    if (!c1 || !c2 || c1.x < -500 || c2.x < -500) return;
+    let dx = c2.x - c1.x, dy = c2.y - c1.y, dist = Math.sqrt(dx*dx + dy*dy), minDist = c1.r + c2.r;
+    if (dist < minDist && dist > 0) { 
+        let nx = dx / dist, ny = dy / dist, overlap = minDist - dist;
+        if (isPost) { c2.x += nx * overlap; c2.y += ny * overlap; }
+        else { c1.x -= nx * overlap * 0.5; c1.y -= ny * overlap * 0.5; c2.x += nx * overlap * 0.5; c2.y += ny * overlap * 0.5; }
+        let relVX = c2.vx - (isPost ? 0 : c1.vx), relVY = c2.vy - (isPost ? 0 : c1.vy), dot = relVX*nx + relVY*ny;
         if (dot < 0) { 
             if ((c1 === ball || c2 === ball) && !isPost && Math.abs(dot) > 1.2) playHitSound();
-            let bounce = isPost ? 0.41 : 0.85; 
-            let impulse = -(1 + bounce) * dot / (1/(isPost?100:c1.m) + 1/c2.m); 
-            c2.vx += (impulse * nx) / c2.m; c2.vy += (impulse * ny) / c2.m; 
-            if (!isPost) { c1.vx -= (impulse * nx) / c1.m; c1.vy -= (impulse * ny) / c1.m; } 
+            let bounce = isPost ? 0.41 : 0.85;
+            let m1 = isPost ? 100 : c1.m, m2 = c2.m;
+            let impulse = -(1 + bounce) * dot / (1/m1 + 1/m2);
+            c2.vx += (impulse * nx) / m2; c2.vy += (impulse * ny) / m2;
+            if (!isPost) { c1.vx -= (impulse * nx) / m1; c1.vy -= (impulse * ny) / m1; }
         } 
     } 
 }
 
+// --- NETWORK ---
 const peer = new Peer({ debug: 1 });
 let connections = [], guestConn = null;
 peer.on('open', id => {
     const joinId = new URLSearchParams(window.location.search).get('join');
-    if (joinId) { isHost = false; document.getElementById('status-text').innerText = "Connessione..."; guestConn = peer.connect(joinId, { reliable: false }); setupGuest(guestConn); } 
-    else { isHost = true; mySlot = 0; document.getElementById('status-text').innerHTML = `Lobby ID: <input type="text" id="link-input" value="${window.location.origin + window.location.pathname}?join=${id}" readonly onclick="this.select(); document.execCommand('copy');">`; document.getElementById('start-btn').style.display = "inline-block"; initColorPickers(); refreshLobbyState(); drawField(); requestAnimationFrame(gameLoop); }
+    if (joinId) { isHost = false; guestConn = peer.connect(joinId, { reliable: false }); setupGuest(guestConn); }
+    else { isHost = true; mySlot = 0; document.getElementById('status-text').innerHTML = `Lobby ID: <input type="text" id=\"link-input\" value=\"${window.location.origin + window.location.pathname}?join=${id}\" readonly onclick=\"this.select(); document.execCommand('copy');\">`; document.getElementById('start-btn').style.display = "inline-block"; initColorPickers(); refreshLobbyState(); drawField(); requestAnimationFrame(gameLoop); }
 });
 
 peer.on('connection', conn => {
@@ -178,7 +181,7 @@ peer.on('connection', conn => {
         if (connections.length >= 5) { conn.close(); return; }
         conn.on('data', data => { 
             if(data.type === 'join') { if (!connections.find(c => c.peer === conn.peer)) { connections.push(conn); conn.send({ type: 'initSlot', slot: connections.indexOf(conn) + 1, colors: teamColors, teams: playerTeams, names: playerNames }); refreshLobbyState(); } }
-            if(data.type === 'input') { const idx = connections.indexOf(conn) + 1; allRemoteKeys[idx] = data.keys; }
+            if(data.type === 'input') { const idx = connections.indexOf(conn) + 1; allRemoteKeys[idx] = data.keys; allRemoteKeys[idx].lastSequence = data.sequence; }
             if(data.type === 'updateName') { playerNames[data.slot] = data.name; refreshLobbyState(); }
         });
         conn.on('close', () => { connections = connections.filter(c => c !== conn); refreshLobbyState(); });
@@ -186,204 +189,245 @@ peer.on('connection', conn => {
 });
 
 function setupGuest(conn) {
-    let joinAttempt = setInterval(() => { if (mySlot !== 0) { clearInterval(joinAttempt); return; } if (conn.open) conn.send({ type: 'join' }); }, 1000);
     conn.on('data', data => {
-        if (data.type === 'initSlot') { mySlot = data.slot; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); document.getElementById('status-text').innerText = "Connesso (GUEST)"; }
+        if (data.type === 'initSlot') { mySlot = data.slot; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); }
         if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); }
         if (data.type === 'start') { resetPos(true); gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; document.getElementById('esc-btn').style.display = "flex"; }
         if (data.type === 'sync') { 
-            ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score; 
+            ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score;
             const now = Date.now();
-            data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].boostReadyTime = now + p.boostReadyRemaining; players[i].boostRemaining = p.boostRemaining; players[i].isBoosting = p.isBoosting; players[i].team = p.team; players[i].kickCharge = p.kickCharge; } }); 
+            data.players.forEach((p, i) => { 
+                if(players[i]) { 
+                    if (i === mySlot) {
+                        players[i].x = p.x; players[i].y = p.y; players[i].vx = p.vx; players[i].vy = p.vy;
+                        // CORREZIONE LASTSEQUENCE: Riconciliazione
+                        pendingInputs = pendingInputs.filter(input => input.sequence > data.lastSequence);
+                        pendingInputs.forEach(input => { movePlayer(players[i], input.keys, 16.6); checkLimits(players[i], false); });
+                    } else { players[i].tx = p.x; players[i].ty = p.y; }
+                    players[i].kick = p.kick; players[i].boostReadyTime = now + p.boostReadyRemaining; 
+                    players[i].boostRemaining = p.boostRemaining; players[i].isBoosting = p.isBoosting; 
+                    players[i].team = p.team; players[i].kickCharge = p.kickCharge; 
+                } 
+            });
         }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; }
         if (data.type === 'stop') backToLobby();
     });
-    function inputLoop() { updateInput(); if(conn.open) conn.send({type:'input', keys}); requestAnimationFrame(inputLoop); }
-    inputLoop(); requestAnimationFrame(gameLoop);
+    setInterval(() => {
+        if (!gameStarted || mySlot === 0) return;
+        updateInput();
+        inputSequenceNumber++;
+        const inputFrame = { sequence: inputSequenceNumber, keys: JSON.parse(JSON.stringify(keys)) };
+        pendingInputs.push(inputFrame);
+        if(conn.open) conn.send({type:'input', keys: inputFrame.keys, sequence: inputSequenceNumber});
+        movePlayer(players[mySlot], inputFrame.keys, 16.6);
+        checkLimits(players[mySlot], false);
+    }, 16.6); 
+    requestAnimationFrame(gameLoop);
 }
 
+// --- INPUT E MOVIMENTO ---
 function updateInput() {
     let kx = 0, ky = 0; keys.kickBase = keys.kickCharge = keys.boost = false;
     if (document.activeElement.tagName === 'INPUT') return;
     if (rawKeys['ArrowLeft'] || rawKeys['KeyA']) kx--; if (rawKeys['ArrowRight'] || rawKeys['KeyD']) kx++;
     if (rawKeys['ArrowUp'] || rawKeys['KeyW']) ky--; if (rawKeys['ArrowDown'] || rawKeys['KeyS']) ky++;
-    
-    if (rawKeys['Space']) keys.kickBase = true; 
-    if (rawKeys['KeyC']) keys.kickCharge = true; 
+    if (rawKeys['Space']) keys.kickBase = true;
+    if (rawKeys['KeyC']) keys.kickCharge = true;
     if (rawKeys['ShiftLeft']) keys.boost = true;
-
     if (kx !== 0 || ky !== 0) { let kmag = Math.sqrt(kx * kx + ky * ky); kx /= kmag; ky /= kmag; }
     keys.ax = kx; keys.ay = ky;
-
-    const gps = navigator.getGamepads(); const gp = gps[0] || gps[1] || gps[2] || gps[3];
+    const gp = navigator.getGamepads()[0];
     if (gp) {
-        let ax = gp.axes[0], ay = gp.axes[1]; const dz = 0.15; if (Math.abs(ax) < dz) ax = 0; if (Math.abs(ay) < dz) ay = 0;
+        let ax = gp.axes[0], ay = gp.axes[1]; if (Math.abs(ax) < 0.15) ax = 0; if (Math.abs(ay) < 0.15) ay = 0;
         if (ax !== 0 || ay !== 0) { keys.ax = ax; keys.ay = ay; }
-        if (gp.buttons[0].pressed) keys.kickBase = true; 
-        if (gp.buttons[1].pressed) keys.kickCharge = true; 
-        if (gp.buttons[5].pressed || gp.buttons[7].pressed) keys.boost = true;
+        if (gp.buttons[0].pressed) keys.kickBase = true;
+        if (gp.buttons[1].pressed) keys.kickCharge = true;
+        if (gp.buttons[5].pressed) keys.boost = true;
     }
-}
-
-let lastTime = 0;
-function gameLoop(t) {
-    const dt = t - (lastTime || t); lastTime = t;
-    if (gameStarted) {
-        if (isHost) {
-            const now = Date.now(); updateInput(); 
-            if (goalMsg.timer <= 0) {
-                if (ball.x < 33 || ball.x > W - 33) { 
-                    if (ball.y > MID_Y_GAME - GOAL_SIZE_HALF && ball.y < MID_Y_GAME + GOAL_SIZE_HALF) { 
-                        if (!isGoalProcessed) { isGoalProcessed = true; if (ball.x < 33) score[1]++; else score[0]++; goalMsg = { text: "GOAL!", timer: 120 }; ball.vx = 0; ball.vy = 0; sendToAll({ type: 'goal', text: "GOAL!", score }); setTimeout(() => resetPos(), 2000); } 
-                    } 
-                }
-                if (!isGoalProcessed) {
-                    movePlayer(players[0], keys, dt); for(let i=1; i<activeCount; i++) if(allRemoteKeys[i]) movePlayer(players[i], allRemoteKeys[i], dt);
-                    // FRIZIONE AGGIORNATA
-                    let friction = 0.9908; ball.vx *= friction; ball.vy *= friction; ball.x += ball.vx; ball.y += ball.vy;
-                    for(let i=0; i<activeCount; i++) { for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); resolve(players[i], ball); posts.forEach(post => resolve(post, players[i], true)); checkLimits(players[i], false); }
-                    posts.forEach(p => resolve(p, ball, true)); checkLimits(ball, true);
-                }
-            }
-            if (t - lastSync > 30) { sendToAll({ type: 'sync', ball: {x: ball.x, y: ball.y}, score, players: players.map(p => ({ x: p.x, y: p.y, kick: p.kick, team: p.team, boostReadyRemaining: Math.max(0, p.boostReadyTime - now), boostRemaining: p.boostRemaining, isBoosting: p.isBoosting, kickCharge: p.kickCharge })) }); lastSync = t; }
-        } else {
-            updateInput(); movePlayer(players[mySlot], keys, dt); checkLimits(players[mySlot], false);
-            ball.x += (ball.tx - ball.x) * 0.35; ball.y += (ball.ty - ball.y) * 0.35;
-            for(let i=0; i<activeCount; i++) { if(i === mySlot) { let dist = Math.sqrt((players[i].x - players[i].tx)**2 + (players[i].y - players[i].ty)**2); if(dist > 5) { players[i].x += (players[i].tx - players[i].x) * 0.1; players[i].y += (players[i].ty - players[i].y) * 0.1; } continue; } players[i].x += (players[i].tx - players[i].x) * 0.35; players[i].y += (players[i].ty - players[i].y) * 0.35; }
-        }
-    }
-    if (goalMsg.timer > 0) goalMsg.timer--; draw(); requestAnimationFrame(gameLoop);
-}
-
-function executeShot(p, dx, dy, d, power) {
-    ball.vx = (dx/d) * power; 
-    ball.vy = (dy/d) * power;
-    p.kick = 15; 
-    p.shotBufferTime = 0; // Pulisce buffer
-    playHitSound();
 }
 
 function movePlayer(p, input, dt) { 
     if(!p || p.x < -500 || goalMsg.timer > 0) return;
     const now = Date.now(); p.isBoosting = false;
-    
-    if (input.boost && now >= p.boostReadyTime && p.boostRemaining > 0) { p.isBoosting = true; p.boostRemaining -= dt; if (p.boostRemaining <= 0) { p.boostRemaining = 0; p.boostReadyTime = now + 12000; } } 
-    if (now >= p.boostReadyTime && p.boostRemaining <= 0) { p.boostRemaining = 400; }
-    let accel = p.isBoosting ? 0.33 : 0.16; p.vx += input.ax * accel; p.vy += input.ay * accel; p.vx *= 0.89; p.vy *= 0.89; p.x += p.vx; p.y += p.vy;
-    
-    let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy);
-    let inRange = d < p.r + ball.r + 12;
-
-    // LOGICA HAXBALL: Reset tiro per evitare il "tiro automatico"
-    if (input.kickBase) {
-        if (!p.wasKickBasePressed) { // Solo primo tocco del tasto
-            if (inRange) {
-                executeShot(p, dx, dy, d, 4.41);
-            } else {
-                p.shotBufferTime = now + 250;
-                p.bufferedCharge = 4.41;
-            }
+    if (input.boost && now >= p.boostReadyTime && p.boostRemaining > 0) { 
+        p.isBoosting = true; p.boostRemaining -= dt; 
+        if (p.boostRemaining <= 0) { p.boostRemaining = 0; p.boostReadyTime = now + 12000; } 
+    }
+    if (now >= p.boostReadyTime && p.boostRemaining <= 0) { p.boostRemaining = 1000; }
+    let accel = p.isBoosting ? 0.32 : 0.155; 
+    p.vx += input.ax * accel; p.vy += input.ay * accel; 
+    p.vx *= 0.89; p.vy *= 0.89; p.x += p.vx; p.y += p.vy;
+    if (isHost) {
+        let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy);
+        let inRange = d < p.r + ball.r + 12;
+        if (input.kickBase) {
+            if (!p.wasKickBasePressed) { if (inRange) executeShot(p, dx, dy, d, 4.05); else { p.shotBufferTime = now + 250; p.bufferedCharge = 4.05; } }
+            p.wasKickBasePressed = true;
+        } else { p.wasKickBasePressed = false; }
+        if (input.kickCharge) { if (p.kickStartTime === 0) p.kickStartTime = now; p.kickCharge = Math.min(1, (now - p.kickStartTime) / 800); } 
+        else if (p.kickStartTime > 0) { 
+            let fP = 4.05 + (p.kickCharge * 2.03); if (inRange) executeShot(p, dx, dy, d, fP); else { p.shotBufferTime = now + 400; p.bufferedCharge = fP; } 
+            p.kickStartTime = 0; p.kickCharge = 0; 
         }
-        p.wasKickBasePressed = true;
-    } else {
-        p.wasKickBasePressed = false;
+        if (p.shotBufferTime > now && inRange) { executeShot(p, dx, dy, d, p.bufferedCharge); p.shotBufferTime = 0; }
     }
-
-    // TASTO C: CARICAMENTO (Opzionale)
-    if (input.kickCharge) {
-        if (p.kickStartTime === 0) p.kickStartTime = now;
-        p.kickCharge = Math.min(1, (now - p.kickStartTime) / 800); 
-    } else {
-        if (p.kickStartTime > 0) {
-            let finalPower = 4.41 + (p.kickCharge * 2.2);
-            if (inRange) { executeShot(p, dx, dy, d, finalPower); } 
-            else { p.shotBufferTime = now + 400; p.bufferedCharge = finalPower; }
-            p.kickStartTime = 0; p.kickCharge = 0;
-        }
-    }
-
-    // Controllo Buffer
-    if (p.shotBufferTime > now && inRange) {
-        executeShot(p, dx, dy, d, p.bufferedCharge);
-        p.shotBufferTime = 0;
-    }
-
     if (p.kick > 0) p.kick--;
 }
 
-function resetPos(full) {
-    isGoalProcessed = false; ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
-    for(let i=0; i<6; i++) { if(players[i]) { 
-        players[i].vx = 0; players[i].vy = 0; 
-        players[i].kickCharge = 0; players[i].kickStartTime = 0; 
-        players[i].shotBufferTime = 0; players[i].wasKickBasePressed = false;
-        if(full) { players[i].boostReadyTime = 0; players[i].boostRemaining = 400; } 
-    } }
-    const t0 = [], t1 = []; for(let i=0; i<activeCount; i++) { if (playerTeams[i] === 0) t0.push(i); else t1.push(i); }
-    if(t0[0] !== undefined) { players[t0[0]].x = players[t0[0]].tx = 250; players[t0[0]].y = players[t0[0]].ty = MID_Y_GAME; }
-    if(t0[1] !== undefined) { players[t0[1]].x = players[t0[1]].tx = 120; players[t0[1]].y = players[t0[1]].ty = MID_Y_GAME-120; }
-    if(t0[2] !== undefined) { players[t0[2]].x = players[t0[2]].tx = 120; players[t0[2]].y = players[t0[2]].ty = MID_Y_GAME+120; }
-    if(t1[0] !== undefined) { players[t1[0]].x = players[t1[0]].tx = W-250; players[t1[0]].y = players[t1[0]].ty = MID_Y_GAME; }
-    if(t1[1] !== undefined) { players[t1[1]].x = players[t1[1]].tx = W-120; players[t1[1]].y = players[t1[1]].ty = MID_Y_GAME-120; }
-    if(t1[2] !== undefined) { players[t1[2]].x = players[t1[2]].tx = W-120; players[t1[2]].y = players[t1[2]].ty = MID_Y_GAME+120; }
+function executeShot(p, dx, dy, d, power) { ball.vx = (dx/d) * power; ball.vy = (dy/d) * power; p.kick = 15; p.shotBufferTime = 0; if (isHost) playHitSound(); }
+
+// --- LOOP GIOCO ---
+function gameLoop(t) {
+    if (gameStarted) {
+        if (isHost) {
+            const now = Date.now(); updateInput();
+            if (goalMsg.timer <= 0) {
+                if ((ball.x < 33 || ball.x > W - 33) && ball.y > MID_Y_GAME - GOAL_SIZE_HALF && ball.y < MID_Y_GAME + GOAL_SIZE_HALF) { 
+                    if (!isGoalProcessed) { 
+                        isGoalProcessed = true; if (ball.x < 33) score[1]++; else score[0]++; 
+                        goalMsg = { text: "GOAL!", timer: 120 }; ball.vx = ball.vy = 0;
+                        sendToAll({ type: 'goal', text: "GOAL!", score }); setTimeout(() => resetPos(), 2000); 
+                    }
+                }
+                if (!isGoalProcessed) {
+                    movePlayer(players[0], keys, 16.6); 
+                    for(let i=1; i<activeCount; i++) if(allRemoteKeys[i]) movePlayer(players[i], allRemoteKeys[i], 16.6);
+                    ball.vx *= 0.9899; ball.vy *= 0.9899; ball.x += ball.vx; ball.y += ball.vy;
+                    for(let i=0; i<activeCount; i++) { 
+                        for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); 
+                        resolve(players[i], ball); posts.forEach(post => resolve(post, players[i], true)); 
+                        checkLimits(players[i], false); 
+                    }
+                    posts.forEach(p => resolve(p, ball, true)); checkLimits(ball, true);
+                }
+            }
+            if (t - lastSync > 30) { 
+                sendToAll({ 
+                    type: 'sync', ball: {x: ball.x, y: ball.y}, score, 
+                    players: players.map((p) => ({ 
+                        x: p.x, y: p.y, vx: p.vx, vy: p.vy, kick: p.kick, team: p.team, 
+                        boostReadyRemaining: Math.max(0, p.boostReadyTime - now), 
+                        boostRemaining: p.boostRemaining, isBoosting: p.isBoosting, kickCharge: p.kickCharge
+                    })) 
+                }); 
+                lastSync = t; 
+            }
+        } else {
+            ball.x += (ball.tx - ball.x) * 0.35; ball.y += (ball.ty - ball.y) * 0.35;
+            for(let i=0; i<activeCount; i++) if(i !== mySlot) { players[i].x += (players[i].tx - players[i].x) * 0.35; players[i].y += (players[i].ty - players[i].y) * 0.35; }
+        }
+    }
+    if (goalMsg.timer > 0) goalMsg.timer--; 
+    draw(); requestAnimationFrame(gameLoop);
 }
 
+function resetPos(full) {
+    isGoalProcessed = false; ball.x = ball.tx = MID_X; ball.y = ball.ty = MID_Y_GAME; ball.vx = ball.vy = 0;
+    for(let i=0; i<6; i++) if(players[i]) { 
+        players[i].vx = players[i].vy = 0; players[i].x = players[i].tx = -1000; 
+        if(full) { players[i].boostReadyTime = 0; players[i].boostRemaining = 1000; } 
+    }
+    const spawnX = 250, spawnYOffset = 120;
+    if(activeCount > 0) { players[0].x = players[0].tx = spawnX; players[0].y = players[0].ty = MID_Y_GAME; }
+    if(activeCount > 1) { players[1].x = players[1].tx = W - spawnX; players[1].y = players[1].ty = MID_Y_GAME; }
+    if(activeCount > 2) { players[2].x = players[2].tx = 120; players[2].y = players[2].ty = MID_Y_GAME - spawnYOffset; }
+    if(activeCount > 3) { players[3].x = players[3].tx = W - 120; players[3].y = players[3].ty = MID_Y_GAME - spawnYOffset; }
+    if(activeCount > 4) { players[4].x = players[4].tx = 120; players[4].y = players[4].ty = MID_Y_GAME + spawnYOffset; }
+    if(activeCount > 5) { players[5].x = players[5].tx = W - 120; players[5].y = players[5].ty = MID_Y_GAME + spawnYOffset; }
+}
+
+// --- DISEGNO (RIPRISTINATO ORIGINALE) ---
 function drawField() { 
-    const bgCtx=document.getElementById('bgCanvas').getContext('2d'); bgCtx.fillStyle="#2e7d32"; bgCtx.fillRect(0,0,W,TOTAL_H); 
-    if(bannerLoaded) bgCtx.drawImage(topImage,0,0,W,OFFSET_TOP); 
-    const fW=W-90, sW=fW/9; for(let i=0; i<9; i++){bgCtx.fillStyle=(i%2===0)?"#2e7d32":"#388e3c"; bgCtx.fillRect(45+(i*sW),OFFSET_TOP+15,sW,H_GAME-30);} 
-    bgCtx.strokeStyle="rgba(255,255,255,0.5)"; bgCtx.lineWidth=4; bgCtx.strokeRect(45,OFFSET_TOP+15,W-90,H_GAME-30); bgCtx.strokeRect(45,MID_Y_GAME-100,80,200); bgCtx.strokeRect(W-125,MID_Y_GAME-100,80,200); bgCtx.beginPath(); bgCtx.moveTo(MID_X,OFFSET_TOP+15); bgCtx.lineTo(MID_X,OFFSET_TOP+H_GAME-15); bgCtx.stroke(); bgCtx.beginPath(); bgCtx.arc(MID_X,MID_Y_GAME,70,0,6.28); bgCtx.stroke(); bgCtx.strokeStyle="#FFF"; bgCtx.strokeRect(15,MID_Y_GAME-GOAL_SIZE_HALF,30,GOAL_SIZE_HALF*2); bgCtx.strokeRect(W-45,MID_Y_GAME-GOAL_SIZE_HALF,30,GOAL_SIZE_HALF*2); 
-    posts.forEach(p=>{bgCtx.fillStyle="#FFF"; bgCtx.beginPath(); bgCtx.arc(p.x,p.y,p.r,0,6.28); bgCtx.fill();}); 
+    const bgCtx=document.getElementById('bgCanvas').getContext('2d'); 
+    bgCtx.fillStyle="#2e7d32"; bgCtx.fillRect(0,0,W,TOTAL_H);
+    if(bannerLoaded) bgCtx.drawImage(topImage,0,0,W,OFFSET_TOP);
+    const fW=W-90, sW=fW/9; 
+    for(let i=0; i<9; i++){bgCtx.fillStyle=(i%2===0)?"#2e7d32":"#388e3c"; bgCtx.fillRect(45+(i*sW),OFFSET_TOP+15,sW,H_GAME-30);}
+    bgCtx.strokeStyle="rgba(255,255,255,0.5)"; bgCtx.lineWidth=4; 
+    bgCtx.strokeRect(45,OFFSET_TOP+15,W-90,H_GAME-30);
+    bgCtx.strokeRect(45,MID_Y_GAME-100,80,200); bgCtx.strokeRect(W-125,MID_Y_GAME-100,80,200);
+    bgCtx.beginPath(); bgCtx.moveTo(MID_X,OFFSET_TOP+15); bgCtx.lineTo(MID_X,OFFSET_TOP+H_GAME-15); bgCtx.stroke();
+    bgCtx.beginPath(); bgCtx.arc(MID_X,MID_Y_GAME,70,0,6.28); bgCtx.stroke();
+    bgCtx.strokeStyle="#FFF"; 
+    bgCtx.strokeRect(15,MID_Y_GAME-GOAL_SIZE_HALF,30,GOAL_SIZE_HALF*2);
+    bgCtx.strokeRect(W-45,MID_Y_GAME-GOAL_SIZE_HALF,30,GOAL_SIZE_HALF*2);
+    posts.forEach(p=>{bgCtx.fillStyle="#FFF"; bgCtx.beginPath(); bgCtx.arc(p.x,p.y,p.r,0,6.28); bgCtx.fill();});
 }
 
 function draw() { 
-    const ctx=document.getElementById('gameCanvas').getContext('2d'), now=Date.now(); ctx.clearRect(0,0,W,TOTAL_H); 
+    const ctx=document.getElementById('gameCanvas').getContext('2d'), now=Date.now(); ctx.clearRect(0,0,W,TOTAL_H);
     for(let i=0; i<activeCount; i++){ 
-        const p=players[i]; if(p.x<-500)continue; 
-        ctx.fillStyle=teamColors[p.team*2+1]; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.28); ctx.fill(); 
-        ctx.strokeStyle=p.kick>0?"#FFF":"#000"; ctx.lineWidth=2.5; ctx.stroke(); 
-        ctx.fillStyle=teamColors[p.team*2]; ctx.beginPath(); ctx.arc(p.x,p.y,11.2,0,6.28); ctx.fill(); 
-        ctx.fillStyle=(i===mySlot)?"yellow":"white"; ctx.font="bold 12px sans-serif"; ctx.textAlign="center"; ctx.fillText(playerNames[i],p.x,p.y-p.r-8); 
-        if(i === mySlot && p.kickCharge > 0) { 
-            ctx.strokeStyle="#ffff00"; ctx.lineWidth=3; ctx.beginPath(); 
-            ctx.arc(p.x,p.y,p.r+4, 0, (Math.PI*2)*p.kickCharge); ctx.stroke(); 
-        }
+        const p=players[i]; if(p.x<-500)continue;
+        ctx.fillStyle=teamColors[p.team*2+1]; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.28); ctx.fill();
+        ctx.strokeStyle=p.kick>0?"#FFF":"#000"; ctx.lineWidth=2.5; ctx.stroke();
+        ctx.fillStyle=teamColors[p.team*2]; ctx.beginPath(); ctx.arc(p.x,p.y,11.2,0,6.28); ctx.fill();
+        ctx.fillStyle=(i===mySlot)?"yellow":"white"; ctx.font="bold 12px sans-serif"; ctx.textAlign="center"; ctx.fillText(playerNames[i],p.x,p.y-p.r-8);
+        if(i===mySlot && p.kickCharge>0){ ctx.strokeStyle="#ffff00"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(p.x,p.y,p.r+4,0,(Math.PI*2)*p.kickCharge); ctx.stroke(); }
     } 
-    ctx.fillStyle="#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.28); ctx.fill(); ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.stroke(); 
-    const myP=players[mySlot]; 
+    ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.28); ctx.fill(); ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.stroke();
+    const myP=players[mySlot];
     if(myP && gameStarted){ 
-        const boostEl = document.getElementById('timer-boost');
-        if (now >= myP.boostReadyTime) { let perc = Math.max(0, Math.ceil((myP.boostRemaining / 400) * 100)); boostEl.innerText = "BST: " + perc + "%"; boostEl.style.color = "#00FF00"; } 
-        else { const bR = Math.max(0, Math.ceil((myP.boostReadyTime - now) / 1000)); boostEl.innerText = "BST: " + bR + "s"; boostEl.style.color = "white"; }
-        const barContainer = document.getElementById('kick-bar-container');
-        const barFill = document.getElementById('kick-bar-fill');
-        if(myP.kickCharge > 0) { barContainer.style.display = 'block'; barFill.style.width = (myP.kickCharge * 100) + '%'; }
-        else { barContainer.style.display = 'none'; }
+        const bEl = document.getElementById('timer-boost');
+        if (now >= myP.boostReadyTime) { bEl.innerText = "BST: " + Math.ceil((myP.boostRemaining/1000)*100) + "%"; bEl.style.color = "#00FF00"; }
+        else { bEl.innerText = "BST: " + Math.ceil((myP.boostReadyTime-now)/1000) + "s"; bEl.style.color = "white"; }
+        if(myP.kickCharge>0){ document.getElementById('kick-bar-container').style.display='block'; document.getElementById('kick-bar-fill').style.width=(myP.kickCharge*100)+'%'; }
+        else document.getElementById('kick-bar-container').style.display='none';
     } 
-    if(goalMsg.timer>0){ctx.font="bold 80px sans-serif"; ctx.textAlign="center"; ctx.fillStyle="white"; ctx.fillText(goalMsg.text,MID_X,MID_Y_GAME);} 
-    document.getElementById('live-score').innerText=score[0]+" - "+score[1]; 
+    if(goalMsg.timer>0){ ctx.font="bold 80px sans-serif"; ctx.textAlign="center"; ctx.fillStyle="white"; ctx.fillText(goalMsg.text,MID_X,MID_Y_GAME); }
+    document.getElementById('live-score').innerText=score[0]+" - "+score[1];
+}
+
+// --- LOBBY E UI ---
+function handleNameChange(i) {
+    const n = document.getElementById('name'+i).value || "P"+(i+1);
+    if(isHost){ playerNames[i]=n; refreshLobbyState(); }
+    else if(i===mySlot){ playerNames[i]=n; if(guestConn?.open) guestConn.send({type:'updateName', slot:mySlot, name:n}); }
 }
 
 function refreshLobbyState() { 
     activeCount = isHost ? (connections.length + 1) : activeCount; 
     for(let i=0; i<6; i++) { 
-        const el = document.getElementById('slot'+i); if(!el) continue;
-        const input = document.getElementById('name'+i), label = document.getElementById('label'+i);
+        const el = document.getElementById('slot'+i), input = document.getElementById('name'+i); 
+        if(!el) continue;
         el.className = 'p-slot' + (i < activeCount ? ' active' : '') + (playerTeams[i] === 0 ? ' team-0' : ' team-1') + (i === mySlot ? ' is-me' : ''); 
-        if (document.activeElement !== input) input.value = playerNames[i];
-        input.readOnly = !isHost && (i !== mySlot); label.innerText = (i === 0) ? "(HOST)" : ((i === mySlot) ? "(TU)" : ""); 
+        if (document.activeElement !== input) input.value = playerNames[i]; 
+        input.readOnly = !isHost && (i !== mySlot); 
+        document.getElementById('label'+i).innerText = (i === 0) ? "(HOST)" : ((i === mySlot) ? "(TU)" : ""); 
     } 
     if(isHost) sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors, teams: playerTeams, names: playerNames }); 
 }
 
-function initColorPickers() { if(!isHost) return; document.getElementById('host-controls').style.display='flex'; const ids = ['picker-t1-c1','picker-t1-c2','picker-t2-c1','picker-t2-c2']; ids.forEach((id,idx) => { const container = document.getElementById(id); if (container.children.length === 0) { PRESET_COLORS.forEach(col => { const d = document.createElement('div'); d.className = 'color-dot'; d.style.backgroundColor = col; d.dataset.color = col; d.onclick = () => { teamColors[idx]=col; initColorPickers(); refreshLobbyState(); }; container.appendChild(d); }); } Array.from(container.children).forEach(dot => { dot.className = 'color-dot' + (teamColors[idx] === dot.dataset.color ? ' active' : ''); }); }); }
-function startGame() { if(isHost){ score=[0,0]; for(let i=0; i<6; i++) players[i].team=playerTeams[i]; resetPos(true); gameStarted=true; document.getElementById('menu-overlay').style.display="none"; document.getElementById('esc-btn').style.display="flex"; sendToAll({type:'start'}); } }
-function backToLobby() { gameStarted = false; document.getElementById('menu-overlay').style.display = "flex"; document.getElementById('esc-btn').style.display = "none"; if(isHost) { connections = connections.filter(c => c.open); sendToAll({type: 'stop'}); refreshLobbyState(); } }
-function sendToAll(d) { connections.forEach(c => { if(c.open) c.send(d); }); }
-function togglePlayerTeam(i){ if(isHost){playerTeams[i]=1-playerTeams[i]; refreshLobbyState();}}
+function initColorPickers() { 
+    if(!isHost) return; document.getElementById('host-controls').style.display='flex'; 
+    ['picker-t1-c1','picker-t1-c2','picker-t2-c1','picker-t2-c2'].forEach((id,idx) => { 
+        const c = document.getElementById(id); if(c.children.length===0) PRESET_COLORS.forEach(col => { 
+            const d = document.createElement('div'); d.className='color-dot'; d.style.backgroundColor=col; d.dataset.color=col; 
+            d.onclick=()=>{ teamColors[idx]=col; initColorPickers(); refreshLobbyState(); }; c.appendChild(d); 
+        }); 
+        Array.from(c.children).forEach(dot => dot.className = 'color-dot' + (teamColors[idx] === dot.dataset.color ? ' active' : ''));
+    }); 
+}
 
-function toggleFullscreen() { if (audioCtx.state === 'suspended') audioCtx.resume(); const c = document.getElementById('game-container'); if (!document.fullscreenElement) { const requestFS = c.requestFullscreen || c.webkitRequestFullscreen || c.mozRequestFullScreen || c.msRequestFullscreen; if (requestFS) requestFS.call(c).then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(e => {}); }); } else { if (document.exitFullscreen) document.exitFullscreen(); } }
+function startGame() { if(isHost){ score=[0,0]; for(let i=0; i<6; i++) players[i].team=playerTeams[i]; resetPos(true); gameStarted=true; document.getElementById('menu-overlay').style.display="none"; document.getElementById('esc-btn').style.display="flex"; sendToAll({type:'start'}); } }
+function backToLobby() { gameStarted=false; document.getElementById('menu-overlay').style.display="flex"; document.getElementById('esc-btn').style.display="none"; if(isHost){ sendToAll({type:'stop'}); refreshLobbyState(); } }
+
+function sendToAll(data) { 
+    connections.forEach((c, idx) => { 
+        if(c.open){ 
+            let d = JSON.parse(JSON.stringify(data)); 
+            if(d.type==='sync') {
+                const cSlot = idx + 1;
+                d.lastSequence = allRemoteKeys[cSlot]?.lastSequence || 0;
+            }
+            c.send(d); 
+        } 
+    }); 
+}
+
+function togglePlayerTeam(i){ if(isHost){playerTeams[i]=1-playerTeams[i]; refreshLobbyState();}}
+function toggleFullscreen() { if (audioCtx.state === 'suspended') audioCtx.resume(); const c = document.getElementById('game-container'); if (!document.fullscreenElement) { const requestFS = c.requestFullscreen || c.webkitRequestFullscreen || c.mozRequestFullScreen || c.msRequestFullscreen; if (requestFS) requestFS.call(c).then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(e => {}); }); } else if (document.exitFullscreen) document.exitFullscreen(); }
+
 window.addEventListener('keydown', e => { if (audioCtx.state === 'suspended') audioCtx.resume(); rawKeys[e.code]=true; if(e.code === 'Escape' && gameStarted) backToLobby(); });
 window.addEventListener('keyup', e => rawKeys[e.code]=false);
 </script>
