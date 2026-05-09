@@ -168,32 +168,11 @@ peer.on('connection', conn => {
 });
 
 function setupGuest(conn) {
-    conn.on('open', () => {
-        conn.send({ type: 'join' }); // Chiedi i dati iniziali
-    });
-
+    conn.on('open', () => { conn.send({ type: 'join' }); });
     conn.on('data', data => {
-        if (data.type === 'initSlot') {
-            mySlot = data.slot;
-            teamColors = data.colors;
-            playerTeams = data.teams;
-            playerNames = data.names;
-            document.getElementById('status-text').innerText = "In attesa dell'Host...";
-            refreshLobbyState();
-        }
-        if (data.type === 'lobbyUpdate') {
-            activeCount = data.count + 1;
-            teamColors = data.colors;
-            playerTeams = data.teams;
-            playerNames = data.names;
-            refreshLobbyState();
-        }
-        if (data.type === 'start') {
-            resetPos(true);
-            gameStarted = true;
-            document.getElementById('menu-overlay').style.display = "none";
-            document.getElementById('esc-btn').style.display = "flex";
-        }
+        if (data.type === 'initSlot') { mySlot = data.slot; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; document.getElementById('status-text').innerText = "In attesa dell'Host..."; refreshLobbyState(); }
+        if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; playerTeams = data.teams; playerNames = data.names; refreshLobbyState(); }
+        if (data.type === 'start') { resetPos(true); gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; document.getElementById('esc-btn').style.display = "flex"; }
         if (data.type === 'sync') { 
             ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score;
             const now = Date.now();
@@ -213,47 +192,51 @@ function setupGuest(conn) {
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; }
         if (data.type === 'stop') backToLobby();
     });
-
     setInterval(() => {
         if (!gameStarted || mySlot === 0) return;
-        updateInput();
-        inputSequenceNumber++;
+        updateInput(); inputSequenceNumber++;
         const inputFrame = { sequence: inputSequenceNumber, keys: JSON.parse(JSON.stringify(keys)) };
         pendingInputs.push(inputFrame);
         if(conn.open) conn.send({type:'input', keys: inputFrame.keys, sequence: inputSequenceNumber});
-        movePlayer(players[mySlot], inputFrame.keys, 16.6);
-        checkLimits(players[mySlot], false);
+        movePlayer(players[mySlot], inputFrame.keys, 16.6); checkLimits(players[mySlot], false);
     }, 16.6); 
     requestAnimationFrame(gameLoop);
 }
 
 // --- PHYSICS & LOGIC ---
+
 function checkLimits(o, isBall) {
     const limitYTop = OFFSET_TOP + 15, limitYBottom = OFFSET_TOP + H_GAME - 15;
     const goalTop = MID_Y_GAME - GOAL_SIZE_HALF, goalBottom = MID_Y_GAME + GOAL_SIZE_HALF;
-    const bounceFactor = 0.54;
+    const limitXLeft = 45, limitXRight = W - 45;
+    
+    // RIMBALZO DINAMICO
+    let bounceFactor = 0.54; 
+    if (isBall) {
+        let speed = Math.sqrt(o.vx * o.vx + o.vy * o.vy);
+        if (speed > 3.5) bounceFactor = Math.min(0.85, 0.54 + (speed * 0.05));
+    }
     
     if (isBall) {
+        // Verticale
         if (o.y - o.r < limitYTop) { o.y = limitYTop + o.r; o.vy = Math.abs(o.vy) * bounceFactor; }
         else if (o.y + o.r > limitYBottom) { o.y = limitYBottom - o.r; o.vy = -Math.abs(o.vy) * bounceFactor; }
-        if (o.x < 45 + o.r) {
-            if (o.y < goalTop || o.y > goalBottom) { o.x = 45 + o.r; o.vx = Math.abs(o.vx) * bounceFactor; }
-            else { if (o.y < goalTop + o.r) o.y = goalTop + o.r; if (o.y > goalBottom - o.r) o.y = goalBottom - o.r; }
-        } else if (o.x > W - 45 - o.r) {
-            if (o.y < goalTop || o.y > goalBottom) { o.x = W - 45 - o.r; o.vx = -Math.abs(o.vx) * bounceFactor; }
-            else { if (o.y < goalTop + o.r) o.y = goalTop + o.r; if (o.y > goalBottom - o.r) o.y = goalBottom - o.r; }
+        
+        // Orizzontale
+        if (o.x - o.r < limitXLeft) {
+            if (o.y < goalTop || o.y > goalBottom) { o.x = limitXLeft + o.r; o.vx = Math.abs(o.vx) * bounceFactor; }
+            else { if (o.x < 15 + o.r) o.x = 15 + o.r; }
+        } else if (o.x + o.r > limitXRight) {
+            if (o.y < goalTop || o.y > goalBottom) { o.x = limitXRight - o.r; o.vx = -Math.abs(o.vx) * bounceFactor; }
+            else { if (o.x > W - 15 - o.r) o.x = W - 15 - o.r; }
         }
     } else {
         const margin = o.r * 0.35;
-        if (o.y < limitYTop + margin) { o.y = limitYTop + margin; o.vy = 0; }
-        else if (o.y > limitYBottom - margin) { o.y = limitYBottom - margin; o.vy = 0; }
-        if (o.x < 45 + margin) {
-            if (o.y < goalTop || o.y > goalBottom) o.x = 45 + margin;
-            else { if (o.x < 15 + o.r) o.x = 15 + o.r; if (o.y < goalTop + margin) o.y = goalTop + margin; if (o.y > goalBottom - margin) o.y = goalBottom - margin; }
-        } else if (o.x > W - 45 - margin) {
-            if (o.y < goalTop || o.y > goalBottom) o.x = W - 45 - margin;
-            else { if (o.x > W - 15 - o.r) o.x = W - 15 - o.r; if (o.y < goalTop + margin) o.y = goalTop + margin; if (o.y > goalBottom - margin) o.y = goalBottom - margin; }
-        }
+        o.y = Math.max(limitYTop + margin, Math.min(o.y, limitYBottom - margin));
+        if (o.x < limitXLeft + margin && (o.y < goalTop || o.y > goalBottom)) o.x = limitXLeft + margin;
+        if (o.x > limitXRight - margin && (o.y < goalTop || o.y > goalBottom)) o.x = limitXRight - margin;
+        if (o.x < 15 + o.r) o.x = 15 + o.r;
+        if (o.x > W - 15 - o.r) o.x = W - 15 - o.r;
     }
 }
 
@@ -267,7 +250,14 @@ function resolve(c1, c2, isPost = false) {
         let relVX = c2.vx - (isPost ? 0 : c1.vx), relVY = c2.vy - (isPost ? 0 : c1.vy), dot = relVX*nx + relVY*ny;
         if (dot < 0) { 
             if ((c1 === ball || c2 === ball) && !isPost && Math.abs(dot) > 1.2) playHitSound();
-            let bounce = isPost ? 0.41 : 0.85, m1 = isPost ? 100 : c1.m, m2 = c2.m;
+            
+            let bounce = 0.85; 
+            if (isPost) {
+                let speed = Math.sqrt(c2.vx * c2.vx + c2.vy * c2.vy);
+                bounce = (speed > 3.5) ? 0.75 : 0.41;
+            }
+
+            let m1 = isPost ? 100 : c1.m, m2 = c2.m;
             let impulse = -(1 + bounce) * dot / (1/m1 + 1/m2);
             c2.vx += (impulse * nx) / m2; c2.vy += (impulse * ny) / m2;
             if (!isPost) { c1.vx -= (impulse * nx) / m1; c1.vy -= (impulse * ny) / m1; }
