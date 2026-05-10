@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>FISHBALL 2D PRO - Multiplayer Fixed</title>
+    <title>FISHBALL 2D PRO - Multiplayer</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
@@ -115,7 +115,6 @@ let bannerLoaded = false, topImage = new Image();
 topImage.onload = () => { bannerLoaded = true; drawField(); };
 topImage.src = 'banner.png';
 
-// --- NETWORK CORE ---
 const peer = new Peer({ debug: 1 });
 let connections = [], guestConn = null;
 
@@ -132,10 +131,7 @@ peer.on('open', id => {
         const inviteLink = window.location.origin + window.location.pathname + "?join=" + id;
         document.getElementById('status-text').innerHTML = `Lobby ID: <input type="text" id="link-input" value="${inviteLink}" readonly onclick="this.select(); document.execCommand('copy');">`; 
         document.getElementById('start-btn').style.display = "inline-block"; 
-        initColorPickers(); 
-        refreshLobbyState(); 
-        drawField(); 
-        requestAnimationFrame(gameLoop); 
+        initColorPickers(); refreshLobbyState(); drawField(); requestAnimationFrame(gameLoop); 
     }
 });
 
@@ -146,13 +142,7 @@ peer.on('connection', conn => {
             if(data.type === 'join') { 
                 if (!connections.find(c => c.peer === conn.peer)) { 
                     connections.push(conn); 
-                    conn.send({ 
-                        type: 'initSlot', 
-                        slot: connections.indexOf(conn) + 1, 
-                        colors: teamColors, 
-                        teams: playerTeams, 
-                        names: playerNames 
-                    }); 
+                    conn.send({ type: 'initSlot', slot: connections.indexOf(conn) + 1, colors: teamColors, teams: playerTeams, names: playerNames }); 
                     refreshLobbyState(); 
                 } 
             }
@@ -203,26 +193,18 @@ function setupGuest(conn) {
     requestAnimationFrame(gameLoop);
 }
 
-// --- PHYSICS & LOGIC ---
-
 function checkLimits(o, isBall) {
     const limitYTop = OFFSET_TOP + 15, limitYBottom = OFFSET_TOP + H_GAME - 15;
     const goalTop = MID_Y_GAME - GOAL_SIZE_HALF, goalBottom = MID_Y_GAME + GOAL_SIZE_HALF;
     const limitXLeft = 45, limitXRight = W - 45;
-    
-    // RIMBALZO DINAMICO
-    let bounceFactor = 0.54; 
+    let bounceFactor = 0.385; // AUMENTATO DEL 10%
     if (isBall) {
         let speed = Math.sqrt(o.vx * o.vx + o.vy * o.vy);
-        if (speed > 3.5) bounceFactor = Math.min(0.85, 0.54 + (speed * 0.05));
+        if (speed > 3.5) bounceFactor = Math.min(0.66, 0.385 + (speed * 0.033));
     }
-    
     if (isBall) {
-        // Verticale
         if (o.y - o.r < limitYTop) { o.y = limitYTop + o.r; o.vy = Math.abs(o.vy) * bounceFactor; }
         else if (o.y + o.r > limitYBottom) { o.y = limitYBottom - o.r; o.vy = -Math.abs(o.vy) * bounceFactor; }
-        
-        // Orizzontale
         if (o.x - o.r < limitXLeft) {
             if (o.y < goalTop || o.y > goalBottom) { o.x = limitXLeft + o.r; o.vx = Math.abs(o.vx) * bounceFactor; }
             else { if (o.x < 15 + o.r) o.x = 15 + o.r; }
@@ -250,13 +232,11 @@ function resolve(c1, c2, isPost = false) {
         let relVX = c2.vx - (isPost ? 0 : c1.vx), relVY = c2.vy - (isPost ? 0 : c1.vy), dot = relVX*nx + relVY*ny;
         if (dot < 0) { 
             if ((c1 === ball || c2 === ball) && !isPost && Math.abs(dot) > 1.2) playHitSound();
-            
             let bounce = 0.85; 
             if (isPost) {
                 let speed = Math.sqrt(c2.vx * c2.vx + c2.vy * c2.vy);
-                bounce = (speed > 3.5) ? 0.75 : 0.41;
+                bounce = (speed > 3.5) ? 0.55 : 0.275; // AUMENTATO DEL 10%
             }
-
             let m1 = isPost ? 100 : c1.m, m2 = c2.m;
             let impulse = -(1 + bounce) * dot / (1/m1 + 1/m2);
             c2.vx += (impulse * nx) / m2; c2.vy += (impulse * ny) / m2;
@@ -293,7 +273,7 @@ function movePlayer(p, input, dt) {
         if (p.boostRemaining <= 0) { p.boostRemaining = 0; p.boostReadyTime = now + 12000; } 
     }
     if (now >= p.boostReadyTime && p.boostRemaining <= 0) { p.boostRemaining = 1000; }
-    let accel = p.isBoosting ? 0.32 : 0.155; 
+    let accel = p.isBoosting ? 0.27125 : 0.155; 
     p.vx += input.ax * accel; p.vy += input.ay * accel; 
     p.vx *= 0.89; p.vy *= 0.89; p.x += p.vx; p.y += p.vy;
     if (isHost) {
@@ -333,21 +313,13 @@ function gameLoop(t) {
                     ball.vx *= 0.9899; ball.vy *= 0.9899; ball.x += ball.vx; ball.y += ball.vy;
                     for(let i=0; i<activeCount; i++) { 
                         for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); 
-                        resolve(players[i], ball); posts.forEach(post => resolve(post, players[i], true)); 
-                        checkLimits(players[i], false); 
+                        resolve(players[i], ball); posts.forEach(post => resolve(post, players[i], true)); checkLimits(players[i], false); 
                     }
                     posts.forEach(p => resolve(p, ball, true)); checkLimits(ball, true);
                 }
             }
             if (t - lastSync > 30) { 
-                sendToAll({ 
-                    type: 'sync', ball: {x: ball.x, y: ball.y}, score, 
-                    players: players.map((p) => ({ 
-                        x: p.x, y: p.y, vx: p.vx, vy: p.vy, kick: p.kick, team: p.team, 
-                        boostReadyRemaining: Math.max(0, p.boostReadyTime - now), 
-                        boostRemaining: p.boostRemaining, isBoosting: p.isBoosting, kickCharge: p.kickCharge
-                    })) 
-                }); 
+                sendToAll({ type: 'sync', ball: {x: ball.x, y: ball.y}, score, players: players.map((p) => ({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, kick: p.kick, team: p.team, boostReadyRemaining: Math.max(0, p.boostReadyTime - now), boostRemaining: p.boostRemaining, isBoosting: p.isBoosting, kickCharge: p.kickCharge })) }); 
                 lastSync = t; 
             }
         } else {
@@ -355,16 +327,12 @@ function gameLoop(t) {
             for(let i=0; i<activeCount; i++) if(i !== mySlot) { players[i].x += (players[i].tx - players[i].x) * 0.35; players[i].y += (players[i].ty - players[i].y) * 0.35; }
         }
     }
-    if (goalMsg.timer > 0) goalMsg.timer--; 
-    draw(); requestAnimationFrame(gameLoop);
+    if (goalMsg.timer > 0) goalMsg.timer--; draw(); requestAnimationFrame(gameLoop);
 }
 
 function resetPos(full) {
     isGoalProcessed = false; ball.x = ball.tx = MID_X; ball.y = ball.ty = MID_Y_GAME; ball.vx = ball.vy = 0;
-    for(let i=0; i<6; i++) if(players[i]) { 
-        players[i].vx = players[i].vy = 0; players[i].x = players[i].tx = -1000; 
-        if(full) { players[i].boostReadyTime = 0; players[i].boostRemaining = 1000; } 
-    }
+    for(let i=0; i<6; i++) if(players[i]) { players[i].vx = players[i].vy = 0; players[i].x = players[i].tx = -1000; if(full) { players[i].boostReadyTime = 0; players[i].boostRemaining = 1000; } }
     const spawnX = 250, spawnYOffset = 120;
     if(activeCount > 0) { players[0].x = players[0].tx = spawnX; players[0].y = players[0].ty = MID_Y_GAME; }
     if(activeCount > 1) { players[1].x = players[1].tx = W - spawnX; players[1].y = players[1].ty = MID_Y_GAME; }
@@ -374,7 +342,6 @@ function resetPos(full) {
     if(activeCount > 5) { players[5].x = players[5].tx = W - 120; players[5].y = players[5].ty = MID_Y_GAME + spawnYOffset; }
 }
 
-// --- DRAWING ---
 function drawField() { 
     const bgCtx=document.getElementById('bgCanvas').getContext('2d'); 
     bgCtx.fillStyle="#2e7d32"; bgCtx.fillRect(0,0,W,TOTAL_H);
@@ -413,7 +380,6 @@ function draw() {
     document.getElementById('live-score').innerText=score[0]+" - "+score[1];
 }
 
-// --- LOBBY UI ---
 function handleNameChange(i) {
     const n = document.getElementById('name'+i).value || "P"+(i+1);
     if(isHost){ playerNames[i]=n; refreshLobbyState(); }
@@ -423,12 +389,10 @@ function handleNameChange(i) {
 function refreshLobbyState() { 
     activeCount = isHost ? (connections.length + 1) : activeCount; 
     for(let i=0; i<6; i++) { 
-        const el = document.getElementById('slot'+i), input = document.getElementById('name'+i); 
-        if(!el) continue;
+        const el = document.getElementById('slot'+i), input = document.getElementById('name'+i); if(!el) continue;
         el.className = 'p-slot' + (i < activeCount ? ' active' : '') + (playerTeams[i] === 0 ? ' team-0' : ' team-1') + (i === mySlot ? ' is-me' : ''); 
         if (document.activeElement !== input) input.value = playerNames[i]; 
-        input.readOnly = !isHost && (i !== mySlot); 
-        document.getElementById('label'+i).innerText = (i === 0) ? "(HOST)" : ((i === mySlot) ? "(TU)" : ""); 
+        input.readOnly = !isHost && (i !== mySlot); document.getElementById('label'+i).innerText = (i === 0) ? "(HOST)" : ((i === mySlot) ? "(TU)" : ""); 
     } 
     if(isHost) sendToAll({ type: 'lobbyUpdate', count: connections.length, colors: teamColors, teams: playerTeams, names: playerNames }); 
 }
@@ -447,16 +411,7 @@ function initColorPickers() {
 function startGame() { if(isHost){ score=[0,0]; for(let i=0; i<6; i++) players[i].team=playerTeams[i]; resetPos(true); gameStarted=true; document.getElementById('menu-overlay').style.display="none"; document.getElementById('esc-btn').style.display="flex"; sendToAll({type:'start'}); } }
 function backToLobby() { gameStarted=false; document.getElementById('menu-overlay').style.display="flex"; document.getElementById('esc-btn').style.display="none"; if(isHost){ sendToAll({type:'stop'}); refreshLobbyState(); } }
 
-function sendToAll(data) { 
-    connections.forEach((c, idx) => { 
-        if(c.open){ 
-            let d = JSON.parse(JSON.stringify(data)); 
-            if(d.type==='sync') d.lastSequence = allRemoteKeys[idx+1]?.lastSequence || 0;
-            c.send(d); 
-        } 
-    }); 
-}
-
+function sendToAll(data) { connections.forEach((c, idx) => { if(c.open){ let d = JSON.parse(JSON.stringify(data)); if(d.type==='sync') d.lastSequence = allRemoteKeys[idx+1]?.lastSequence || 0; c.send(d); } }); }
 function togglePlayerTeam(i){ if(isHost){playerTeams[i]=1-playerTeams[i]; refreshLobbyState();}}
 function toggleFullscreen() { if (audioCtx.state === 'suspended') audioCtx.resume(); const c = document.getElementById('game-container'); if (!document.fullscreenElement) { const requestFS = c.requestFullscreen || c.webkitRequestFullscreen || c.mozRequestFullScreen || c.msRequestFullscreen; if (requestFS) requestFS.call(c).then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(e => {}); }); } else if (document.exitFullscreen) document.exitFullscreen(); }
 
