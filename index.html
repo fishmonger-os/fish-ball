@@ -68,6 +68,7 @@
         </div>
         <div class="ui-bottom-right">
             <div id="timer-boost" class="timer-display"></div>
+            <div id="timer-tackle" class="timer-display" style="color: #ff9800;"></div>
             <div id="kick-bar-container"><div id="kick-bar-fill"></div></div>
             <div id="live-score">0 - 0</div>
         </div>
@@ -102,13 +103,14 @@ const MID_X = W / 2, MID_Y_GAME = OFFSET_TOP + (H_GAME / 2), GOAL_SIZE_HALF = 68
 let players = Array.from({length: 6}, () => ({ 
     x: -1000, y: -1000, tx: -1000, ty: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, 
     boostRemaining: 1000, boostReadyTime: 0, isBoosting: false,
-    kickCharge: 0, kickStartTime: 0, shotBufferTime: 0, bufferedCharge: 0, wasKickBasePressed: false, team: 0
+    kickCharge: 0, kickStartTime: 0, shotBufferTime: 0, bufferedCharge: 0, wasKickBasePressed: false, team: 0,
+    tackleReadyTime: 0, stunUntil: 0, tackleVisualTimer: 0
 }));
 
 let ball = { x: MID_X, y: MID_Y_GAME, tx: MID_X, ty: MID_Y_GAME, vx: 0, vy: 0, r: 10, m: 1 };
 let score = [0, 0], goalMsg = { text: "", timer: 0 }, isGoalProcessed = false, gameStarted = false, isHost = false, activeCount = 1, mySlot = 0, lastSync = 0;
 let pendingInputs = [], inputSequenceNumber = 0;
-const keys = { ax: 0, ay: 0, kickBase: false, kickCharge: false, boost: false }, rawKeys = {}, allRemoteKeys = {};
+const keys = { ax: 0, ay: 0, kickBase: false, kickCharge: false, boost: false, tackle: false }, rawKeys = {}, allRemoteKeys = {};
 const posts = [{x:45, y:MID_Y_GAME-GOAL_SIZE_HALF, r:5.6}, {x:45, y:MID_Y_GAME+GOAL_SIZE_HALF, r:5.6}, {x:W-45, y:MID_Y_GAME-GOAL_SIZE_HALF, r:5.6}, {x:W-45, y:MID_Y_GAME+GOAL_SIZE_HALF, r:5.6}];
 
 let bannerLoaded = false, topImage = new Image();
@@ -171,11 +173,14 @@ function setupGuest(conn) {
                     if (i === mySlot) {
                         players[i].x = p.x; players[i].y = p.y; players[i].vx = p.vx; players[i].vy = p.vy;
                         pendingInputs = pendingInputs.filter(input => input.sequence > data.lastSequence);
-                        pendingInputs.forEach(input => { movePlayer(players[i], input.keys, 16.6); checkLimits(players[i], false); });
+                        pendingInputs.forEach(input => { movePlayer(players[i], input.keys, 16.6, i); checkLimits(players[i], false); });
                     } else { players[i].tx = p.x; players[i].ty = p.y; }
                     players[i].kick = p.kick; players[i].boostReadyTime = now + p.boostReadyRemaining; 
                     players[i].boostRemaining = p.boostRemaining; players[i].isBoosting = p.isBoosting; 
                     players[i].team = p.team; players[i].kickCharge = p.kickCharge; 
+                    players[i].tackleReadyTime = now + p.tackleReadyRemaining;
+                    players[i].stunUntil = p.isStunned ? (now + 1000) : 0;
+                    players[i].tackleVisualTimer = p.tackleVisualTimer;
                 } 
             });
         }
@@ -188,7 +193,7 @@ function setupGuest(conn) {
         const inputFrame = { sequence: inputSequenceNumber, keys: JSON.parse(JSON.stringify(keys)) };
         pendingInputs.push(inputFrame);
         if(conn.open) conn.send({type:'input', keys: inputFrame.keys, sequence: inputSequenceNumber});
-        movePlayer(players[mySlot], inputFrame.keys, 16.6); checkLimits(players[mySlot], false);
+        movePlayer(players[mySlot], inputFrame.keys, 16.6, mySlot); checkLimits(players[mySlot], false);
     }, 16.6); 
     requestAnimationFrame(gameLoop);
 }
@@ -197,7 +202,7 @@ function checkLimits(o, isBall) {
     const limitYTop = OFFSET_TOP + 15, limitYBottom = OFFSET_TOP + H_GAME - 15;
     const goalTop = MID_Y_GAME - GOAL_SIZE_HALF, goalBottom = MID_Y_GAME + GOAL_SIZE_HALF;
     const limitXLeft = 45, limitXRight = W - 45;
-    let bounceFactor = 0.385; // AUMENTATO DEL 10%
+    let bounceFactor = 0.385; 
     if (isBall) {
         let speed = Math.sqrt(o.vx * o.vx + o.vy * o.vy);
         if (speed > 3.5) bounceFactor = Math.min(0.66, 0.385 + (speed * 0.033));
@@ -235,7 +240,7 @@ function resolve(c1, c2, isPost = false) {
             let bounce = 0.85; 
             if (isPost) {
                 let speed = Math.sqrt(c2.vx * c2.vx + c2.vy * c2.vy);
-                bounce = (speed > 3.5) ? 0.55 : 0.275; // AUMENTATO DEL 10%
+                bounce = (speed > 3.5) ? 0.55 : 0.275; 
             }
             let m1 = isPost ? 100 : c1.m, m2 = c2.m;
             let impulse = -(1 + bounce) * dot / (1/m1 + 1/m2);
@@ -245,29 +250,52 @@ function resolve(c1, c2, isPost = false) {
     } 
 }
 
+function performTackle(pIdx) {
+    const p = players[pIdx];
+    const now = Date.now();
+    p.tackleReadyTime = now + 30000;
+    p.tackleVisualTimer = 10; 
+    for(let i=0; i<activeCount; i++) {
+        if(i === pIdx) continue;
+        const other = players[i];
+        let dx = other.x - p.x, dy = other.y - p.y, d = Math.sqrt(dx*dx+dy*dy);
+        if (d < p.r + other.r + 8) { 
+            other.stunUntil = now + 1500;
+            let pwr = 7.5; other.vx = (dx/d) * pwr; other.vy = (dy/d) * pwr;
+            if(isHost) playHitSound();
+        }
+    }
+}
+
 function updateInput() {
-    let kx = 0, ky = 0; keys.kickBase = keys.kickCharge = keys.boost = false;
+    let kx = 0, ky = 0; keys.kickBase = keys.kickCharge = keys.boost = keys.tackle = false;
     if (document.activeElement.tagName === 'INPUT') return;
     if (rawKeys['ArrowLeft'] || rawKeys['KeyA']) kx--; if (rawKeys['ArrowRight'] || rawKeys['KeyD']) kx++;
     if (rawKeys['ArrowUp'] || rawKeys['KeyW']) ky--; if (rawKeys['ArrowDown'] || rawKeys['KeyS']) ky++;
     if (rawKeys['Space']) keys.kickBase = true;
     if (rawKeys['KeyC']) keys.kickCharge = true;
     if (rawKeys['ShiftLeft']) keys.boost = true;
+    if (rawKeys['KeyV']) keys.tackle = true; 
     if (kx !== 0 || ky !== 0) { let kmag = Math.sqrt(kx * kx + ky * ky); kx /= kmag; ky /= kmag; }
     keys.ax = kx; keys.ay = ky;
     const gp = navigator.getGamepads()[0];
     if (gp) {
         let ax = gp.axes[0], ay = gp.axes[1]; if (Math.abs(ax) < 0.15) ax = 0; if (Math.abs(ay) < 0.15) ay = 0;
         if (ax !== 0 || ay !== 0) { keys.ax = ax; keys.ay = ay; }
-        if (gp.buttons[0].pressed) keys.kickBase = true;
-        if (gp.buttons[1].pressed) keys.kickCharge = true;
+        if (gp.buttons[4].pressed) { keys.tackle = true; keys.kickBase = false; keys.kickCharge = false; }
+        else { if (gp.buttons[0].pressed) keys.kickBase = true; if (gp.buttons[1].pressed) keys.kickCharge = true; }
         if (gp.buttons[5].pressed) keys.boost = true;
     }
 }
 
-function movePlayer(p, input, dt) { 
+function movePlayer(p, input, dt, pIdx) { 
     if(!p || p.x < -500 || goalMsg.timer > 0) return;
-    const now = Date.now(); p.isBoosting = false;
+    const now = Date.now();
+    if (now < p.stunUntil) { p.vx *= 0.95; p.vy *= 0.95; p.x += p.vx; p.y += p.vy; return; }
+    
+    if (input.tackle && now >= p.tackleReadyTime) { performTackle(pIdx); p.kickStartTime = 0; p.kickCharge = 0; }
+
+    p.isBoosting = false;
     if (input.boost && now >= p.boostReadyTime && p.boostRemaining > 0) { 
         p.isBoosting = true; p.boostRemaining -= dt; 
         if (p.boostRemaining <= 0) { p.boostRemaining = 0; p.boostReadyTime = now + 12000; } 
@@ -276,21 +304,25 @@ function movePlayer(p, input, dt) {
     let accel = p.isBoosting ? 0.27125 : 0.155; 
     p.vx += input.ax * accel; p.vy += input.ay * accel; 
     p.vx *= 0.89; p.vy *= 0.89; p.x += p.vx; p.y += p.vy;
+    
     if (isHost) {
         let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy);
         let inRange = d < p.r + ball.r + 12;
-        if (input.kickBase) {
-            if (!p.wasKickBasePressed) { if (inRange) executeShot(p, dx, dy, d, 4.05); else { p.shotBufferTime = now + 250; p.bufferedCharge = 4.05; } }
-            p.wasKickBasePressed = true;
-        } else { p.wasKickBasePressed = false; }
-        if (input.kickCharge) { if (p.kickStartTime === 0) p.kickStartTime = now; p.kickCharge = Math.min(1, (now - p.kickStartTime) / 800); } 
-        else if (p.kickStartTime > 0) { 
-            let fP = 4.05 + (p.kickCharge * 2.03); if (inRange) executeShot(p, dx, dy, d, fP); else { p.shotBufferTime = now + 400; p.bufferedCharge = fP; } 
-            p.kickStartTime = 0; p.kickCharge = 0; 
+        if (p.tackleVisualTimer <= 0) {
+            if (input.kickBase) {
+                if (!p.wasKickBasePressed) { if (inRange) executeShot(p, dx, dy, d, 4.05); else { p.shotBufferTime = now + 250; p.bufferedCharge = 4.05; } }
+                p.wasKickBasePressed = true;
+            } else { p.wasKickBasePressed = false; }
+            if (input.kickCharge) { if (p.kickStartTime === 0) p.kickStartTime = now; p.kickCharge = Math.min(1, (now - p.kickStartTime) / 800); } 
+            else if (p.kickStartTime > 0) { 
+                let fP = 4.05 + (p.kickCharge * 2.03); if (inRange) executeShot(p, dx, dy, d, fP); else { p.shotBufferTime = now + 400; p.bufferedCharge = fP; } 
+                p.kickStartTime = 0; p.kickCharge = 0; 
+            }
+            if (p.shotBufferTime > now && inRange) { executeShot(p, dx, dy, d, p.bufferedCharge); p.shotBufferTime = 0; }
         }
-        if (p.shotBufferTime > now && inRange) { executeShot(p, dx, dy, d, p.bufferedCharge); p.shotBufferTime = 0; }
     }
     if (p.kick > 0) p.kick--;
+    if (p.tackleVisualTimer > 0) p.tackleVisualTimer--;
 }
 
 function executeShot(p, dx, dy, d, power) { ball.vx = (dx/d) * power; ball.vy = (dy/d) * power; p.kick = 15; p.shotBufferTime = 0; if (isHost) playHitSound(); }
@@ -308,8 +340,8 @@ function gameLoop(t) {
                     }
                 }
                 if (!isGoalProcessed) {
-                    movePlayer(players[0], keys, 16.6); 
-                    for(let i=1; i<activeCount; i++) if(allRemoteKeys[i]) movePlayer(players[i], allRemoteKeys[i], 16.6);
+                    movePlayer(players[0], keys, 16.6, 0); 
+                    for(let i=1; i<activeCount; i++) if(allRemoteKeys[i]) movePlayer(players[i], allRemoteKeys[i], 16.6, i);
                     ball.vx *= 0.9899; ball.vy *= 0.9899; ball.x += ball.vx; ball.y += ball.vy;
                     for(let i=0; i<activeCount; i++) { 
                         for(let j=i+1; j<activeCount; j++) resolve(players[i], players[j]); 
@@ -319,7 +351,7 @@ function gameLoop(t) {
                 }
             }
             if (t - lastSync > 30) { 
-                sendToAll({ type: 'sync', ball: {x: ball.x, y: ball.y}, score, players: players.map((p) => ({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, kick: p.kick, team: p.team, boostReadyRemaining: Math.max(0, p.boostReadyTime - now), boostRemaining: p.boostRemaining, isBoosting: p.isBoosting, kickCharge: p.kickCharge })) }); 
+                sendToAll({ type: 'sync', ball: {x: ball.x, y: ball.y}, score, players: players.map((p) => ({ x: p.x, y: p.y, vx: p.vx, vy: p.vy, kick: p.kick, team: p.team, boostReadyRemaining: Math.max(0, p.boostReadyTime - now), boostRemaining: p.boostRemaining, isBoosting: p.isBoosting, kickCharge: p.kickCharge, tackleReadyRemaining: Math.max(0, p.tackleReadyTime - now), isStunned: now < p.stunUntil, tackleVisualTimer: p.tackleVisualTimer })) }); 
                 lastSync = t; 
             }
         } else {
@@ -332,7 +364,7 @@ function gameLoop(t) {
 
 function resetPos(full) {
     isGoalProcessed = false; ball.x = ball.tx = MID_X; ball.y = ball.ty = MID_Y_GAME; ball.vx = ball.vy = 0;
-    for(let i=0; i<6; i++) if(players[i]) { players[i].vx = players[i].vy = 0; players[i].x = players[i].tx = -1000; if(full) { players[i].boostReadyTime = 0; players[i].boostRemaining = 1000; } }
+    for(let i=0; i<6; i++) if(players[i]) { players[i].vx = players[i].vy = 0; players[i].x = players[i].tx = -1000; players[i].tackleVisualTimer = 0; if(full) { players[i].boostReadyTime = 0; players[i].boostRemaining = 1000; players[i].tackleReadyTime = 0; } }
     const spawnX = 250, spawnYOffset = 120;
     if(activeCount > 0) { players[0].x = players[0].tx = spawnX; players[0].y = players[0].ty = MID_Y_GAME; }
     if(activeCount > 1) { players[1].x = players[1].tx = W - spawnX; players[1].y = players[1].ty = MID_Y_GAME; }
@@ -362,10 +394,11 @@ function draw() {
     for(let i=0; i<activeCount; i++){ 
         const p=players[i]; if(p.x<-500)continue;
         ctx.fillStyle=teamColors[p.team*2+1]; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.28); ctx.fill();
-        ctx.strokeStyle=p.kick>0?"#FFF":"#000"; ctx.lineWidth=2.5; ctx.stroke();
+        ctx.strokeStyle=(p.tackleVisualTimer > 0 || p.kick > 0)?"#FFF":"#000"; ctx.lineWidth=3; ctx.stroke();
         ctx.fillStyle=teamColors[p.team*2]; ctx.beginPath(); ctx.arc(p.x,p.y,11.2,0,6.28); ctx.fill();
         ctx.fillStyle=(i===mySlot)?"yellow":"white"; ctx.font="bold 12px sans-serif"; ctx.textAlign="center"; ctx.fillText(playerNames[i],p.x,p.y-p.r-8);
         if(i===mySlot && p.kickCharge>0){ ctx.strokeStyle="#ffff00"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(p.x,p.y,p.r+4,0,(Math.PI*2)*p.kickCharge); ctx.stroke(); }
+        if (now < p.stunUntil) { ctx.font="20px Arial"; ctx.fillText("😵", p.x, p.y - 25); }
     } 
     ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.28); ctx.fill(); ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.stroke();
     const myP=players[mySlot];
@@ -373,6 +406,10 @@ function draw() {
         const bEl = document.getElementById('timer-boost');
         if (now >= myP.boostReadyTime) { bEl.innerText = "BST: " + Math.ceil((myP.boostRemaining/1000)*100) + "%"; bEl.style.color = "#00FF00"; }
         else { bEl.innerText = "BST: " + Math.ceil((myP.boostReadyTime-now)/1000) + "s"; bEl.style.color = "white"; }
+        
+        const tEl = document.getElementById('timer-tackle');
+        tEl.innerText = "TKL: " + (now >= myP.tackleReadyTime ? "READY" : Math.ceil((myP.tackleReadyTime-now)/1000)+"s");
+
         if(myP.kickCharge>0){ document.getElementById('kick-bar-container').style.display='block'; document.getElementById('kick-bar-fill').style.width=(myP.kickCharge*100)+'%'; }
         else document.getElementById('kick-bar-container').style.display='none';
     } 
