@@ -25,7 +25,7 @@
         .p-slot.is-me { color: #ffeb3b !important; border: 1px solid rgba(255, 235, 59, 0.3); }
         .p-slot.team-0 { border-left: 5px solid #FF0000; background: rgba(255,0,0,0.1); }
         .p-slot.team-1 { border-left: 5px solid #0000FF; background: rgba(0,0,255,0.1); }
-        .name-input { background: transparent; border: none; color: inherit; border-radius: 4px; padding: 2px 5px; width: 100px; font-size: 0.9em; font-weight: inherit; text-align: center; outline: none; }
+        .name-input { background: transparent; border: none; color: inherit; border-radius: 4px; padding: 2px 5px; width: 80px; font-size: 0.9em; font-weight: inherit; text-align: center; outline: none; }
         .p-slot.active .name-input { background: rgba(255,255,255,0.1); border: 1px solid rgba(255,255,255,0.2); cursor: text; }
         #fs-btn { display: none; background: #2196F3; color: white; border: none; padding: 15px 25px; font-size: 1.1em; cursor: pointer; border-radius: 30px; font-weight: bold; margin-bottom: 20px; text-transform: uppercase; width: 100%; }
         #start-btn { background: #4CAF50; color: white; border: none; padding: 15px 50px; font-size: 1.2em; cursor: pointer; border-radius: 30px; display: none; font-weight: bold; text-transform: uppercase; margin-top: 10px; }
@@ -56,12 +56,12 @@
                 </div>
 
                 <div class="player-status-grid">
-                    <div id="slot0" class="p-slot team-0" onclick="togglePlayerTeam(0)"><input type="text" class="name-input" id="name0" value="P1" maxlength="8" oninput="handleNameChange(0)" onclick="event.stopPropagation()"><span id="label0" style="font-size: 0.7em;"></span></div> 
-                    <div id="slot1" class="p-slot team-1" onclick="togglePlayerTeam(1)"><input type="text" class="name-input" id="name1" value="P2" maxlength="8" oninput="handleNameChange(1)" onclick="event.stopPropagation()"><span id="label1" style="font-size: 0.7em;"></span></div>
-                    <div id="slot2" class="p-slot team-0" onclick="togglePlayerTeam(2)"><input type="text" class="name-input" id="name2" value="P3" maxlength="8" oninput="handleNameChange(2)" onclick="event.stopPropagation()"><span id="label2" style="font-size: 0.7em;"></span></div> 
-                    <div id="slot3" class="p-slot team-1" onclick="togglePlayerTeam(3)"><input type="text" class="name-input" id="name3" value="P4" maxlength="8" oninput="handleNameChange(3)" onclick="event.stopPropagation()"><span id="label3" style="font-size: 0.7em;"></span></div>
-                    <div id="slot4" class="p-slot team-0" onclick="togglePlayerTeam(4)"><input type="text" class="name-input" id="name4" value="P5" maxlength="8" oninput="handleNameChange(4)" onclick="event.stopPropagation()"><span id="label4" style="font-size: 0.7em;"></span></div> 
-                    <div id="slot5" class="p-slot team-1" onclick="togglePlayerTeam(5)"><input type="text" class="name-input" id="name5" value="P6" maxlength="8" oninput="handleNameChange(5)" onclick="event.stopPropagation()"><span id="label5" style="font-size: 0.7em;"></span></div>
+                    <div id="slot0" class="p-slot team-0" onclick="togglePlayerTeam(0)"><span><small>1.</small> <input type="text" class="name-input" id="name0" value="P1" maxlength="8" oninput="handleNameChange(0)" onclick="event.stopPropagation()"></span><span id="label0" style="font-size: 0.7em;"></span></div> 
+                    <div id="slot1" class="p-slot team-1" onclick="togglePlayerTeam(1)"><span><small>2.</small> <input type="text" class="name-input" id="name1" value="P2" maxlength="8" oninput="handleNameChange(1)" onclick="event.stopPropagation()"></span><span id="label1" style="font-size: 0.7em;"></span></div>
+                    <div id="slot2" class="p-slot team-0" onclick="togglePlayerTeam(2)"><span><small>3.</small> <input type="text" class="name-input" id="name2" value="P3" maxlength="8" oninput="handleNameChange(2)" onclick="event.stopPropagation()"></span><span id="label2" style="font-size: 0.7em;"></span></div> 
+                    <div id="slot3" class="p-slot team-1" onclick="togglePlayerTeam(3)"><span><small>4.</small> <input type="text" class="name-input" id="name3" value="P4" maxlength="8" oninput="handleNameChange(3)" onclick="event.stopPropagation()"></span><span id="label3" style="font-size: 0.7em;"></span></div>
+                    <div id="slot4" class="p-slot team-0" onclick="togglePlayerTeam(4)"><span><small>5.</small> <input type="text" class="name-input" id="name4" value="P5" maxlength="8" oninput="handleNameChange(4)" onclick="event.stopPropagation()"></span><span id="label4" style="font-size: 0.7em;"></span></div> 
+                    <div id="slot5" class="p-slot team-1" onclick="togglePlayerTeam(5)"><span><small>6.</small> <input type="text" class="name-input" id="name5" value="P6" maxlength="8" oninput="handleNameChange(5)" onclick="event.stopPropagation()"></span><span id="label5" style="font-size: 0.7em;"></span></div>
                 </div>
                 <button id="start-btn" onclick="startGame()">GIOCA ORA</button>
             </div>
@@ -179,7 +179,7 @@ function setupGuest(conn) {
                     players[i].boostRemaining = p.boostRemaining; players[i].isBoosting = p.isBoosting; 
                     players[i].team = p.team; players[i].kickCharge = p.kickCharge; 
                     players[i].tackleReadyTime = now + p.tackleReadyRemaining;
-                    players[i].stunUntil = p.isStunned ? (now + 1000) : 0;
+                    players[i].stunUntil = p.isStunned ? (now + 1500) : 0;
                     players[i].tackleVisualTimer = p.tackleVisualTimer;
                 } 
             });
@@ -259,9 +259,10 @@ function performTackle(pIdx) {
         if(i === pIdx) continue;
         const other = players[i];
         let dx = other.x - p.x, dy = other.y - p.y, d = Math.sqrt(dx*dx+dy*dy);
-        if (d < p.r + other.r + 8) { 
+        if (d < p.r + other.r + 15) { 
             other.stunUntil = now + 1500;
-            let pwr = 7.5; other.vx = (dx/d) * pwr; other.vy = (dy/d) * pwr;
+            let pwr = 12.5; 
+            other.vx = (dx/d) * pwr; other.vy = (dy/d) * pwr;
             if(isHost) playHitSound();
         }
     }
@@ -291,10 +292,11 @@ function updateInput() {
 function movePlayer(p, input, dt, pIdx) { 
     if(!p || p.x < -500 || goalMsg.timer > 0) return;
     const now = Date.now();
-    if (now < p.stunUntil) { p.vx *= 0.95; p.vy *= 0.95; p.x += p.vx; p.y += p.vy; return; }
-    
+    if (now < p.stunUntil) { 
+        p.m = 1.5; p.vx *= 0.985; p.vy *= 0.985; p.x += p.vx; p.y += p.vy; 
+        return; 
+    } else { p.m = 6; }
     if (input.tackle && now >= p.tackleReadyTime) { performTackle(pIdx); p.kickStartTime = 0; p.kickCharge = 0; }
-
     p.isBoosting = false;
     if (input.boost && now >= p.boostReadyTime && p.boostRemaining > 0) { 
         p.isBoosting = true; p.boostRemaining -= dt; 
@@ -304,7 +306,6 @@ function movePlayer(p, input, dt, pIdx) {
     let accel = p.isBoosting ? 0.27125 : 0.155; 
     p.vx += input.ax * accel; p.vy += input.ay * accel; 
     p.vx *= 0.89; p.vy *= 0.89; p.x += p.vx; p.y += p.vy;
-    
     if (isHost) {
         let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy);
         let inRange = d < p.r + ball.r + 12;
@@ -393,10 +394,18 @@ function draw() {
     const ctx=document.getElementById('gameCanvas').getContext('2d'), now=Date.now(); ctx.clearRect(0,0,W,TOTAL_H);
     for(let i=0; i<activeCount; i++){ 
         const p=players[i]; if(p.x<-500)continue;
+        // Esterno Maglia
         ctx.fillStyle=teamColors[p.team*2+1]; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.28); ctx.fill();
         ctx.strokeStyle=(p.tackleVisualTimer > 0 || p.kick > 0)?"#FFF":"#000"; ctx.lineWidth=3; ctx.stroke();
+        // Interno Maglia
         ctx.fillStyle=teamColors[p.team*2]; ctx.beginPath(); ctx.arc(p.x,p.y,11.2,0,6.28); ctx.fill();
-        ctx.fillStyle=(i===mySlot)?"yellow":"white"; ctx.font="bold 12px sans-serif"; ctx.textAlign="center"; ctx.fillText(playerNames[i],p.x,p.y-p.r-8);
+        // NUMERO DI MAGLIA (Centrato e stabile)
+        ctx.fillStyle = "#FFF"; ctx.font = "bold 11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(i + 1, p.x, p.y);
+        // NOME SOPRA
+        ctx.fillStyle=(i===mySlot)?"yellow":"white"; ctx.font="bold 12px sans-serif"; ctx.textAlign="center"; ctx.textBaseline = "alphabetic";
+        ctx.fillText(playerNames[i],p.x,p.y-p.r-8);
+        
         if(i===mySlot && p.kickCharge>0){ ctx.strokeStyle="#ffff00"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(p.x,p.y,p.r+4,0,(Math.PI*2)*p.kickCharge); ctx.stroke(); }
         if (now < p.stunUntil) { ctx.font="20px Arial"; ctx.fillText("😵", p.x, p.y - 25); }
     } 
@@ -406,10 +415,8 @@ function draw() {
         const bEl = document.getElementById('timer-boost');
         if (now >= myP.boostReadyTime) { bEl.innerText = "BST: " + Math.ceil((myP.boostRemaining/1000)*100) + "%"; bEl.style.color = "#00FF00"; }
         else { bEl.innerText = "BST: " + Math.ceil((myP.boostReadyTime-now)/1000) + "s"; bEl.style.color = "white"; }
-        
         const tEl = document.getElementById('timer-tackle');
         tEl.innerText = "TKL: " + (now >= myP.tackleReadyTime ? "READY" : Math.ceil((myP.tackleReadyTime-now)/1000)+"s");
-
         if(myP.kickCharge>0){ document.getElementById('kick-bar-container').style.display='block'; document.getElementById('kick-bar-fill').style.width=(myP.kickCharge*100)+'%'; }
         else document.getElementById('kick-bar-container').style.display='none';
     } 
