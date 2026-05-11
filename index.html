@@ -179,7 +179,7 @@ function setupGuest(conn) {
                     players[i].boostRemaining = p.boostRemaining; players[i].isBoosting = p.isBoosting; 
                     players[i].team = p.team; players[i].kickCharge = p.kickCharge; 
                     players[i].tackleReadyTime = now + p.tackleReadyRemaining;
-                    players[i].stunUntil = p.isStunned ? (now + 1500) : 0;
+                    players[i].stunUntil = p.isStunned ? (now + 1200) : 0;
                     players[i].tackleVisualTimer = p.tackleVisualTimer;
                 } 
             });
@@ -260,8 +260,8 @@ function performTackle(pIdx) {
         const other = players[i];
         let dx = other.x - p.x, dy = other.y - p.y, d = Math.sqrt(dx*dx+dy*dy);
         if (d < p.r + other.r + 15) { 
-            other.stunUntil = now + 600; // Tempo di stordimento ridotto
-            let pwr = 1.5; // Spinta calibrata per circa 25px
+            other.stunUntil = now + 1200; // Durata per completare la scivolata di 80px
+            let pwr = 4.2; // Forza calibrata per spostamento di circa 80px con attrito 0.965
             other.vx = (dx/d) * pwr; other.vy = (dy/d) * pwr;
             if(isHost) playHitSound();
         }
@@ -294,7 +294,7 @@ function movePlayer(p, input, dt, pIdx) {
     const now = Date.now();
     if (now < p.stunUntil) { 
         p.m = 1.5; 
-        p.vx *= 0.85; p.vy *= 0.85; // Attrito elevato durante il tackle per fermarlo subito
+        p.vx *= 0.965; p.vy *= 0.965; // Attrito basso per scivolata fluida di 80px
         p.x += p.vx; p.y += p.vy; 
         return; 
     } else { p.m = 6; }
