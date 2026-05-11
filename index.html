@@ -260,8 +260,8 @@ function performTackle(pIdx) {
         const other = players[i];
         let dx = other.x - p.x, dy = other.y - p.y, d = Math.sqrt(dx*dx+dy*dy);
         if (d < p.r + other.r + 15) { 
-            other.stunUntil = now + 1500;
-            let pwr = 2.5; // Spinta ridotta dell'80% (da 12.5 a 2.5)
+            other.stunUntil = now + 600; // Tempo di stordimento ridotto
+            let pwr = 1.5; // Spinta calibrata per circa 25px
             other.vx = (dx/d) * pwr; other.vy = (dy/d) * pwr;
             if(isHost) playHitSound();
         }
@@ -293,7 +293,9 @@ function movePlayer(p, input, dt, pIdx) {
     if(!p || p.x < -500 || goalMsg.timer > 0) return;
     const now = Date.now();
     if (now < p.stunUntil) { 
-        p.m = 1.5; p.vx *= 0.985; p.vy *= 0.985; p.x += p.vx; p.y += p.vy; 
+        p.m = 1.5; 
+        p.vx *= 0.85; p.vy *= 0.85; // Attrito elevato durante il tackle per fermarlo subito
+        p.x += p.vx; p.y += p.vy; 
         return; 
     } else { p.m = 6; }
     if (input.tackle && now >= p.tackleReadyTime) { performTackle(pIdx); p.kickStartTime = 0; p.kickCharge = 0; }
