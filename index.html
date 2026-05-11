@@ -267,8 +267,10 @@ function movePlayer(p, input, dt) {
     if(!p || p.x < -500 || goalMsg.timer > 0) return;
     const now = Date.now(); 
 
+    // LOGICA STUN
     if (now < p.auraActiveUntil) {
-        p.vx *= 0.995; p.vy *= 0.995; p.x += p.vx; p.y += p.vy;
+        p.vx *= 0.97; p.vy *= 0.97; 
+        p.x += p.vx; p.y += p.vy;
         p.kickCharge = 0; p.kickStartTime = 0; p.isBoosting = false;
         return; 
     }
@@ -280,11 +282,17 @@ function movePlayer(p, input, dt) {
             if (target && target !== p && target.team !== p.team && target.x > -500) {
                 let dx = target.x - p.x, dy = target.y - p.y;
                 let dist = Math.sqrt(dx*dx + dy*dy);
-                if (dist < p.r + target.r + 15) { targetsInRange.push(target); }
+                if (dist < p.r + target.r + 20) { targetsInRange.push({target, dx, dy, dist}); }
             }
         }
         if (targetsInRange.length > 0) {
-            targetsInRange[0].auraActiveUntil = now + 1200;
+            let victim = targetsInRange[0];
+            victim.target.auraActiveUntil = now + 1200;
+            // SPINTA RIDOTTA di un ulteriore 10% (da 3.0 a 2.7)
+            let pushForce = 2.7; 
+            victim.target.vx = (victim.dx / victim.dist) * pushForce;
+            victim.target.vy = (victim.dy / victim.dist) * pushForce;
+            
             p.lastAuraTime = now;
             p.auraVisualTimer = 15;
             if (isHost) playHitSound(200);
@@ -371,10 +379,8 @@ function gameLoop(t) {
 function resetPos(full) {
     isGoalProcessed = false; ball.x = ball.tx = MID_X; ball.y = ball.ty = MID_Y_GAME; ball.vx = ball.vy = 0;
     let realPlayers = isHost ? (connections.length + 1) : activeCount;
-    // Il BOT gioca solo se c'è un unico giocatore umano in totale
-    if (realPlayers === 1) { players[1].isBot = true; if(isHost) playerNames[1] = "BOT"; }
+    if (realPlayers === 1) { players[1].isBot = true; }
     else { players[1].isBot = false; }
-    
     for(let i=0; i<6; i++) if(players[i]) { 
         players[i].vx = players[i].vy = 0; players[i].x = players[i].tx = -1000; 
         if(full) { players[i].boostReadyTime = 0; players[i].boostRemaining = 1200; players[i].lastAuraTime = 0; players[i].auraActiveUntil = 0; players[i].auraVisualTimer = 0; } 
@@ -441,19 +447,18 @@ function refreshLobbyState() {
     let realPlayers = isHost ? (connections.length + 1) : activeCount; 
     for(let i=0; i<6; i++) { 
         const el = document.getElementById('slot'+i), input = document.getElementById('name'+i); if(!el) continue;
-        
-        // MODIFICA CRUCIALE: Se c'è un Guest (realPlayers > 1), il BOT sparisce dalla lobby
         let isActive = i < realPlayers;
-        if (isHost && realPlayers === 1 && i === 1) isActive = true; // Mostra BOT solo se l'host è solo
-        
-        el.className = 'p-slot' + (isActive ? ' active' : '') + (playerTeams[i] === 0 ? ' team-0' : ' team-1') + (i === mySlot ? ' is-me' : ''); 
-        
-        // Gestione nomi
-        if (document.activeElement !== input) {
-            if (i === 1 && realPlayers === 1 && isHost) input.value = "BOT";
-            else input.value = playerNames[i] || "P" + (i+1);
+        if (isHost && realPlayers === 1 && i === 1) {
+            isActive = true;
+            if (document.activeElement !== input) input.value = "BOT";
+            playerNames[i] = "BOT";
+        } else {
+            if (document.activeElement !== input) {
+                if (isActive && (playerNames[i] === "BOT" || !playerNames[i])) { playerNames[i] = "P" + (i + 1); }
+                input.value = playerNames[i] || "P" + (i + 1);
+            }
         }
-        
+        el.className = 'p-slot' + (isActive ? ' active' : '') + (playerTeams[i] === 0 ? ' team-0' : ' team-1') + (i === mySlot ? ' is-me' : ''); 
         input.readOnly = !isHost && (i !== mySlot); 
         document.getElementById('label'+i).innerText = (i === 0) ? "(HOST)" : ((i === mySlot) ? "(TU)" : ""); 
     } 
@@ -473,7 +478,6 @@ function initColorPickers() {
 
 function startGame() { if(isHost){ score=[0,0]; for(let i=0; i<6; i++) players[i].team=playerTeams[i]; resetPos(true); gameStarted=true; document.getElementById('menu-overlay').style.display="none"; document.getElementById('esc-btn').style.display="flex"; sendToAll({type:'start'}); } }
 function backToLobby() { gameStarted=false; document.getElementById('menu-overlay').style.display="flex"; document.getElementById('esc-btn').style.display="none"; if(isHost){ sendToAll({type:'stop'}); refreshLobbyState(); } }
-
 function sendToAll(data) { connections.forEach((c, idx) => { if(c.open){ let d = JSON.parse(JSON.stringify(data)); if(d.type==='sync') d.lastSequence = allRemoteKeys[idx+1]?.lastSequence || 0; c.send(d); } }); }
 function togglePlayerTeam(i){ if(isHost){playerTeams[i]=1-playerTeams[i]; refreshLobbyState();}}
 function toggleFullscreen() { if (audioCtx.state === 'suspended') audioCtx.resume(); const c = document.getElementById('game-container'); if (!document.fullscreenElement) { const requestFS = c.requestFullscreen || c.webkitRequestFullscreen || c.mozRequestFullScreen || c.msRequestFullscreen; if (requestFS) requestFS.call(c).then(() => { if (screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(e => {}); }); } else if (document.exitFullscreen) document.exitFullscreen(); }
