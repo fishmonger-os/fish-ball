@@ -235,7 +235,7 @@ function resolve(c1, c2, isPost = false) {
     } 
 }
 
-/** * FUNZIONE AGGIORNATA: Rimbalzo palla incrementato del 7% 
+/** * FUNZIONE AGGIORNATA: Rimbalzo palla incrementato di un ulteriore 3% (totale ~10.2%)
  */
 function checkLimits(o, isBall) {
     const limitYTop = OFFSET_TOP + 15 + fieldOffsetY, limitYBottom = OFFSET_TOP + H_GAME_BASE - 15 - fieldOffsetY;
@@ -244,12 +244,12 @@ function checkLimits(o, isBall) {
     if (isBall) {
         let speed = Math.sqrt(o.vx * o.vx + o.vy * o.vy);
         
-        // Calcolo bounceFactor con incremento del 7%
-        // Base: 0.35 * 1.07 = 0.3745
-        // Max: 0.60 * 1.07 = 0.642
-        // Speed multiplier: 0.03 * 1.07 = 0.0321
-        let bounceFactor = 0.3745; 
-        if (speed > 3.5) bounceFactor = Math.min(0.642, 0.3745 + (speed * 0.0321));
+        // Calcolo bounceFactor con incremento totale del 10.21% (7% prec + 3% attuale)
+        // Base: 0.35 * 1.1021 = 0.3857
+        // Max: 0.60 * 1.1021 = 0.6612
+        // Speed multiplier: 0.03 * 1.1021 = 0.033
+        let bounceFactor = 0.3857; 
+        if (speed > 3.5) bounceFactor = Math.min(0.6612, 0.3857 + (speed * 0.033));
 
         if (o.y - o.r < limitYTop) { o.y = limitYTop + o.r; o.vy = Math.abs(o.vy) * bounceFactor; } 
         else if (o.y + o.r > limitYBottom) { o.y = limitYBottom - o.r; o.vy = -Math.abs(o.vy) * bounceFactor; }
