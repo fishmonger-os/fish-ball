@@ -109,7 +109,7 @@
                         <span id="label2" style="font-size: 0.7em;"></span>
                     </div> 
                     <div id="slot3" class="p-slot team-1" onclick="togglePlayerTeam(3)">
-                        <input type="text" class="name-input" id="name3" value="P4" maxlength="8" oninput="maxlength" oninput="handleNameChange(3)" onclick="event.stopPropagation()">
+                        <input type="text" class="name-input" id="name3" value="P4" maxlength="8" oninput="handleNameChange(3)" onclick="event.stopPropagation()">
                         <input type="text" class="number-input" id="num3" value="4" maxlength="2" oninput="handleNumberChange(3)" onclick="event.stopPropagation()">
                         <span id="label3" style="font-size: 0.7em;"></span>
                     </div>
@@ -163,7 +163,7 @@ const MID_X = W / 2, MID_Y_GAME = OFFSET_TOP + (H_GAME_BASE / 2), GOAL_SIZE_HALF
 let fieldOffsetX = 0, fieldOffsetY = 0, lastFieldOffsetX = -1, lastFieldOffsetY = -1; 
 let players = Array.from({length: 6}, () => ({ 
     x: -1000, y: -1000, tx: -1000, ty: -1000, vx: 0, vy: 0, r: 16, m: 6, kick: 0, 
-    boostRemaining: 700, boostReadyTime: 0, isBoosting: false, 
+    boostRemaining: 500, boostReadyTime: 0, isBoosting: false, 
     kickCharge: 0, kickStartTime: 0, shotBufferTime: 0, bufferedCharge: 0, wasKickBasePressed: false, team: 0,
     lastTackleTime: 0, tackleActiveUntil: 0, tackleVisualTimer: 0, isBot: false
 }));
@@ -261,7 +261,7 @@ function resolve(c1, c2, isPost = false) {
         let relVX = c2.vx - (isPost ? 0 : c1.vx), relVY = c2.vy - (isPost ? 0 : c1.vy), dot = relVX*nx + relVY*ny;
         if (dot < 0) { 
             if ((c1 === ball || c2 === ball) && !isPost && Math.abs(dot) > 1.2) playHitSound();
-            let bounce = 0.85; if (isPost) { let speed = Math.sqrt(c2.vx * c2.vx + c2.vy * c2.vy); bounce = (speed > 3.5) ? 0.55 : 0.275; }
+            let bounce = 0.8925; if (isPost) { let speed = Math.sqrt(c2.vx * c2.vx + c2.vy * c2.vy); bounce = (speed > 3.5) ? 0.5775 : 0.2887; }
             let m1 = isPost ? 100 : c1.m, m2 = c2.m;
             let impulse = -(1 + bounce) * dot / (1/m1 + 1/m2);
             c2.vx += (impulse * nx) / m2; c2.vy += (impulse * ny) / m2; if (!isPost) { c1.vx -= (impulse * nx) / m1; c1.vy -= (impulse * ny) / m1; }
@@ -302,17 +302,13 @@ function movePlayer(p, input, dt) {
     if(!p || p.x < -500 || goalMsg.timer > 0) return;
     const now = Date.now(); 
     if (now < p.tackleActiveUntil) { p.vx *= 0.967; p.vy *= 0.967; p.x += p.vx; p.y += p.vy; return; }
-    
-    // GESTIONE TACKLE: Interrompe la corsa dell'avversario azzerando vx/vy istantaneamente
     if (input.tackle && now - p.lastTackleTime > 30000) {
         for(let i=0; i<6; i++) {
             let t = players[i]; if (t && t !== p && t.team !== p.team && t.x > -500) {
                 let dx = t.x - p.x, dy = t.y - p.y, dist = Math.sqrt(dx*dx + dy*dy);
                 if (dist < p.r + t.r + 6) {
                     t.tackleActiveUntil = now + 900; 
-                    t.vx = 0; 
-                    t.vy = 0; 
-                    p.lastTackleTime = now; p.tackleVisualTimer = 15; if (isHost) playHitSound(200); 
+                    t.vx = (dx/dist) * 1.35; t.vy = (dy/dist) * 1.35; p.lastTackleTime = now; p.tackleVisualTimer = 15; if (isHost) playHitSound(200); 
                 }
             }
         }
@@ -320,10 +316,6 @@ function movePlayer(p, input, dt) {
     if (p.tackleVisualTimer > 0) p.tackleVisualTimer--;
     
     if (input.boost && now >= p.boostReadyTime && p.boostRemaining > 0) { 
-        if (!p.isBoosting && (input.ax !== 0 || input.ay !== 0)) {
-            p.vx += input.ax * 0.9; 
-            p.vy += input.ay * 0.9; 
-        }
         p.isBoosting = true; 
         p.boostRemaining -= dt; 
         if (p.boostRemaining <= 0) { 
@@ -334,14 +326,14 @@ function movePlayer(p, input, dt) {
     } else { 
         p.isBoosting = false; 
     }
-    if (now >= p.boostReadyTime && p.boostRemaining <= 0) { p.boostRemaining = 700; }
+    if (now >= p.boostReadyTime && p.boostRemaining <= 0) { p.boostRemaining = 500; }
     
-    let accel = p.isBoosting ? 0.07275 : 0.0436; p.vx += input.ax * accel; p.vy += input.ay * accel; p.vx *= 0.967; p.vy *= 0.967; p.x += p.vx; p.y += p.vy;
+    let accel = p.isBoosting ? 0.09603 : 0.043164; p.vx += input.ax * accel; p.vy += input.ay * accel; p.vx *= 0.967; p.vy *= 0.967; p.x += p.vx; p.y += p.vy;
     if (isHost) {
         let dx = ball.x - p.x, dy = ball.y - p.y, d = Math.sqrt(dx*dx + dy*dy), inRange = d < p.r + ball.r + 6;
-        if (input.kickBase) { if (!p.wasKickBasePressed) { if (inRange) executeShot(p, dx, dy, d, 3.52); else { p.shotBufferTime = now + 250; p.bufferedCharge = 3.52; } } p.wasKickBasePressed = true; } else { p.wasKickBasePressed = false; }
+        if (input.kickBase) { if (!p.wasKickBasePressed) { if (inRange) executeShot(p, dx, dy, d, 3.4848); else { p.shotBufferTime = now + 250; p.bufferedCharge = 3.4848; } } p.wasKickBasePressed = true; } else { p.wasKickBasePressed = false; }
         if (input.kickCharge) { if (p.kickStartTime === 0) p.kickStartTime = now; p.kickCharge = Math.min(1, (now - p.kickStartTime) / 800); } 
-        else if (p.kickStartTime > 0) { let fP = 3.52 + (p.kickCharge * 1.97); if (inRange) executeShot(p, dx, dy, d, fP); else { p.shotBufferTime = now + 400; p.bufferedCharge = fP; } p.kickStartTime = 0; p.kickCharge = 0; }
+        else if (p.kickStartTime > 0) { let fP = 3.4848 + (p.kickCharge * 1.9503); if (inRange) executeShot(p, dx, dy, d, fP); else { p.shotBufferTime = now + 400; p.bufferedCharge = fP; } p.kickStartTime = 0; p.kickCharge = 0; }
         if (p.shotBufferTime > now && inRange) { executeShot(p, dx, dy, d, p.bufferedCharge); p.shotBufferTime = 0; }
     }
     if (p.kick > 0) p.kick--;
@@ -394,7 +386,7 @@ function resetPos(full) {
     }
     
     if (currentPlayers === 2 && isHost && connections.length === 0) { players[1].isBot = true; } else { players[1].isBot = false; }
-    for(let i=0; i<6; i++) if(players[i]) { players[i].vx = players[i].vy = 0; players[i].x = players[i].tx = -1000; if(full) { players[i].boostReadyTime = 0; players[i].boostRemaining = 700; players[i].lastTackleTime = 0; players[i].tackleActiveUntil = 0; players[i].tackleVisualTimer = 0; } }
+    for(let i=0; i<6; i++) if(players[i]) { players[i].vx = players[i].vy = 0; players[i].x = players[i].tx = -1000; if(full) { players[i].boostReadyTime = 0; players[i].boostRemaining = 500; players[i].lastTackleTime = 0; players[i].tackleActiveUntil = 0; players[i].tackleVisualTimer = 0; } }
     const spawnX = 250 - (fieldOffsetX * 0.8), spawnYOffset = 120 - (fieldOffsetY * 0.5);
     players[0].x = players[0].tx = spawnX + fieldOffsetX; players[0].y = players[0].ty = MID_Y_GAME;
     if (players[1].isBot || currentPlayers > 1) { players[1].x = players[1].tx = W - spawnX - fieldOffsetX; players[1].y = players[1].ty = MID_Y_GAME; }
@@ -449,7 +441,7 @@ function draw() {
         const aEl = document.getElementById('tackle-status'); const remainingTackle = Math.ceil((30000 - (now - myP.lastTackleTime))/1000);
         aEl.innerText = remainingTackle > 0 ? "TCK: " + remainingTackle + "s" : "TCK: OK";
         
-        const bEl = document.getElementById('timer-boost'); if (now >= myP.boostReadyTime) { bEl.innerText = "BST: " + Math.ceil((myP.boostRemaining/700)*100) + "%"; bEl.style.color = "#00FF00"; }
+        const bEl = document.getElementById('timer-boost'); if (now >= myP.boostReadyTime) { bEl.innerText = "BST: " + Math.ceil((myP.boostRemaining/500)*100) + "%"; bEl.style.color = "#00FF00"; }
         else { bEl.innerText = "BST: " + Math.ceil((myP.boostReadyTime-now)/1000) + "s"; bEl.style.color = "white"; }
         if(myP.kickCharge>0){ document.getElementById('kick-bar-container').style.display='block'; document.getElementById('kick-bar-fill').style.width=(myP.kickCharge*100)+'%'; }
         else document.getElementById('kick-bar-container').style.display='none';
