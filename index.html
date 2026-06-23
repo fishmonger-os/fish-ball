@@ -7,7 +7,6 @@
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         body { background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; color: white; font-family: sans-serif; overflow: hidden; }
-        /* Impostato sfondo verde scuro nel container (esterno al campo) */
         #game-container { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; background: #153818; }
         canvas { position: absolute; width: 100%; height: 100%; object-fit: contain; }
         #bgCanvas { z-index: 1; will-change: transform; }
@@ -185,16 +184,28 @@ function updatePosts() {
     ];
 }
 
-// --- GESTIONE RETE PEERJS CORRETTA ---
-const peer = new Peer({ debug: 1 });
+// --- RETE E CONNESSIONE AVANZATA CON DIAGNOSTICA ERRORI ---
+const peer = new Peer({ debug: 2 }); 
 let connections = [], guestConn = null;
+
+peer.on('error', err => {
+    console.error("Errore critico PeerJS:", err);
+    let errorMsg = `Errore di rete generico (${err.type}).`;
+    if (err.type === 'peer-unavailable') errorMsg = "Host non trovato! La lobby non esiste, l'host si è disconnesso o il link è scaduto.";
+    else if (err.type === 'network') errorMsg = "Impossibile connettersi al server PeerJS (Assenza di internet o server giù).";
+    else if (err.type === 'webrtc') errorMsg = "Connessione WebRTC fallita. Blocco dovuto a Firewall, rete NAT aziendale/scolastica o AdBlock/Brave.";
+    else if (err.type === 'disconnected') errorMsg = "Connessione al server dei segnali interrotta.";
+    else if (err.type === 'invalid-id') errorMsg = "ID della lobby non valido.";
+    
+    document.getElementById('status-text').innerHTML = `<span style="color: #ff4444; font-weight: bold;">${errorMsg}</span>`;
+});
 
 peer.on('open', id => {
     const joinId = new URLSearchParams(window.location.search).get('join');
     if (joinId) { 
         isHost = false; 
-        document.getElementById('status-text').innerText = "Connessione all'host...";
-        guestConn = peer.connect(joinId, { reliable: true }); 
+        document.getElementById('status-text').innerText = "Connessione all'host (Apertura tunnel P2P)...";
+        guestConn = peer.connect(joinId); 
         setupGuest(guestConn); 
     } else { 
         isHost = true; 
@@ -209,99 +220,64 @@ peer.on('open', id => {
 });
 
 function setupGuest(conn) {
+    let connTimeout = setTimeout(() => {
+        if (document.getElementById('status-text').innerText.includes("Connessione") || document.getElementById('status-text').innerText.includes("tunnel")) {
+            document.getElementById('status-text').innerHTML = `<span style="color: #ff4444; font-weight: bold;">Connessione fallita per Timeout! Il tuo router o browser (es. Brave/AdBlock) sta bloccando il traffico P2P (WebRTC STUN/TURN).</span>`;
+        }
+    }, 9000);
+
     conn.on('open', () => { 
+        clearTimeout(connTimeout); 
+        document.getElementById('status-text').innerText = "Sincronizzazione dati lobby...";
         conn.send({ type: 'join' }); 
-        document.getElementById('status-text').innerText = "Sincronizzazione lobby...";
     });
     
+    conn.on('error', err => {
+        clearTimeout(connTimeout);
+        console.error("Errore canale di connessione:", err);
+        document.getElementById('status-text').innerHTML = `<span style="color: #ff4444; font-weight: bold;">Errore di connessione: ${err.message || err}</span>`;
+    });
+
+    conn.on('close', () => {
+        clearTimeout(connTimeout);
+        document.getElementById('status-text').innerHTML = `<span style="color: #ff4444; font-weight: bold;">Disconnesso: l'Host ha chiuso la connessione.</span>`;
+        backToLobby();
+    });
+
     conn.on('data', data => {
-        if (data.type === 'initSlot') { 
-            mySlot = data.slot; 
-            teamColors = data.colors; 
-            numberColors = data.numColors || ['#FFFFFF', '#FFFFFF']; 
-            playerTeams = data.teams; 
-            playerNames = data.names; 
-            playerNumbers = data.numbers || ["1", "2", "3", "4", "5", "6"]; 
-            document.getElementById('status-text').innerText = "Connesso alla Lobby!";
-            refreshLobbyState(); 
-        }
-        if (data.type === 'lobbyUpdate') { 
-            activeCount = data.count + 1; 
-            teamColors = data.colors; 
-            numberColors = data.numColors || ['#FFFFFF', '#FFFFFF']; 
-            playerTeams = data.teams; 
-            playerNames = data.names; 
-            playerNumbers = data.numbers || ["1", "2", "3", "4", "5", "6"]; 
-            document.getElementById('status-text').innerText = "Connesso alla Lobby!";
-            refreshLobbyState(); 
-        }
-        if (data.type === 'start') { 
-            activeCount = data.activeCount; 
-            resetPos(true); 
-            gameStarted = true; 
-            document.getElementById('menu-overlay').style.display = "none"; 
-            document.getElementById('esc-btn').style.display = "flex"; 
-        }
+        if (data.type === 'initSlot') { mySlot = data.slot; teamColors = data.colors; numberColors = data.numColors || ['#FFFFFF', '#FFFFFF']; playerTeams = data.teams; playerNames = data.names; playerNumbers = data.numbers || ["1", "2", "3", "4", "5", "6"]; refreshLobbyState(); }
+        if (data.type === 'lobbyUpdate') { activeCount = data.count + 1; teamColors = data.colors; numberColors = data.numColors || ['#FFFFFF', '#FFFFFF']; playerTeams = data.teams; playerNames = data.names; playerNumbers = data.numbers || ["1", "2", "3", "4", "5", "6"]; refreshLobbyState(); }
+        if (data.type === 'start') { activeCount = data.activeCount; resetPos(true); gameStarted = true; document.getElementById('menu-overlay').style.display = "none"; document.getElementById('esc-btn').style.display = "flex"; }
         if (data.type === 'sync') { 
             ball.tx = data.ball.x; ball.ty = data.ball.y; score = data.score;
+            gameTime = data.gameTime; 
             const now = Date.now();
-            data.players.forEach((p, i) => { 
-                if(players[i]) { 
-                    players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; 
-                    players[i].boostRemaining = p.boostRemaining; 
-                    players[i].boostReadyTime = now + p.boostReadyRemaining; 
-                    players[i].isBoosting = p.isBoosting; players[i].team = p.team; 
-                    players[i].kickCharge = p.kickCharge; 
-                } 
-            });
+            data.players.forEach((p, i) => { if(players[i]) { players[i].tx = p.x; players[i].ty = p.y; players[i].kick = p.kick; players[i].boostRemaining = p.boostRemaining; players[i].boostReadyTime = now + p.boostReadyRemaining; players[i].isBoosting = p.isBoosting; players[i].team = p.team; players[i].kickCharge = p.kickCharge; } });
         }
         if (data.type === 'goal') { goalMsg = { text: data.text, timer: 120 }; score = data.score; }
         if (data.type === 'stop') backToLobby();
     });
-    
     setInterval(() => { if(gameStarted && conn.open) { updateInput(); conn.send({type:'input', keys}); } }, 16);
     requestAnimationFrame(gameLoop);
 }
 
-// GESTIONE CONNESSIONI SUL LATO HOST
 peer.on('connection', conn => {
-    // Registriamo direttamente il listener 'data' senza attendere l'evento 'open'
-    conn.on('data', data => { 
-        if(data.type === 'join') { 
-            if (connections.length >= 5) { conn.close(); return; }
-            if (!connections.includes(conn)) {
-                connections.push(conn); 
+    conn.on('open', () => {
+        if (connections.length >= 5) { conn.close(); return; }
+        conn.on('data', data => { 
+            if(data.type === 'join') { 
+                if(!connections.includes(conn)) { connections.push(conn); }
+                conn.send({ type: 'initSlot', slot: connections.indexOf(conn) + 1, colors: teamColors, numColors: numberColors, teams: playerTeams, names: playerNames, numbers: playerNumbers }); 
+                refreshLobbyState(); 
             }
-            conn.send({ 
-                type: 'initSlot', 
-                slot: connections.indexOf(conn) + 1, 
-                colors: teamColors, 
-                numColors: numberColors, 
-                teams: playerTeams, 
-                names: playerNames, 
-                numbers: playerNumbers 
-            }); 
-            refreshLobbyState(); 
-        }
-        if(data.type === 'input') { 
-            let idx = connections.indexOf(conn) + 1;
-            if (idx > 0) allRemoteKeys[idx] = data.keys; 
-        }
-        if(data.type === 'updateName') { playerNames[data.slot] = data.name; refreshLobbyState(); }
-        if(data.type === 'updateNumber') { playerNumbers[data.slot] = data.number; refreshLobbyState(); }
-    });
-    
-    conn.on('close', () => { 
-        connections = connections.filter(c => c !== conn); 
-        refreshLobbyState(); 
-    });
-    
-    conn.on('error', err => {
-        connections = connections.filter(c => c !== conn); 
-        refreshLobbyState(); 
+            if(data.type === 'input') { allRemoteKeys[connections.indexOf(conn) + 1] = data.keys; }
+            if(data.type === 'updateName') { playerNames[data.slot] = data.name; refreshLobbyState(); }
+            if(data.type === 'updateNumber') { playerNumbers[data.slot] = data.number; refreshLobbyState(); }
+        });
+        conn.on('close', () => { connections = connections.filter(c => c !== conn); refreshLobbyState(); });
+        conn.on('error', err => { console.error("Errore client connesso:", err); });
     });
 });
-// -------------------------------------
 
 function updateInput() {
     let kx = 0, ky = 0; keys.kickBase = keys.kickCharge = keys.boost = false;
@@ -532,6 +508,7 @@ function gameLoop(t) {
                     type: 'sync', 
                     ball: {x: ball.x, y: ball.y}, 
                     score, 
+                    gameTime,
                     players: players.map(p => ({ 
                         x: p.x, y: p.y, kick: p.kick, team: p.team, 
                         boostReadyRemaining: Math.max(0, p.boostReadyTime - performance.now()), 
@@ -577,22 +554,18 @@ function drawField(forceRedraw = false) {
 
     const bgCtx = document.getElementById('bgCanvas').getContext('2d');
     
-    // 1. Sfondo esterno (Verde foresta molto scuro: #153818)
     bgCtx.fillStyle = "#153818"; 
     bgCtx.fillRect(0, 0, W, TOTAL_H);
 
-    // 2. Disegno del Campo con strisce
     const fW = (W - 90) - (fieldOffsetX * 2), fH = (H_GAME_BASE - 30) - (fieldOffsetY * 2);
     const startX = 45 + fieldOffsetX, startY = OFFSET_TOP + 15 + fieldOffsetY;
     
-    // Disegno strisce alternate
     const sW = fW / 9;
     for(let i=0; i<9; i++){ 
         bgCtx.fillStyle = (i % 2 === 0) ? "#2e7d32" : "#388e3c"; 
         bgCtx.fillRect(startX + (i * sW), startY, sW, fH); 
     }
 
-    // Linee e area di gioco
     bgCtx.strokeStyle = "rgba(255,255,255,0.5)"; 
     bgCtx.lineWidth = 4; 
     bgCtx.strokeRect(startX, startY, fW, fH);
@@ -609,17 +582,13 @@ function drawField(forceRedraw = false) {
 function draw() { 
     const ctx = document.getElementById('gameCanvas').getContext('2d'), now = Date.now(); 
     ctx.clearRect(0,0,W,TOTAL_H);
-    
-    // Configurazione bordo nero per i testi della UI
     ctx.strokeStyle = "#000000";
     
-    // 1. Disegno dei Giocatori
     for(let i=0; i<6; i++){ 
         const p=players[i]; if(p.x<-500)continue;
         
         ctx.fillStyle=teamColors[p.team*2+1]; ctx.beginPath(); ctx.arc(p.x,p.y,p.r,0,6.28); ctx.fill();
         ctx.strokeStyle = (p.kick > 0) ? "#FFF" : "#000"; ctx.lineWidth=2.5; ctx.stroke();
-        
         ctx.fillStyle=teamColors[p.team*2]; ctx.beginPath(); ctx.arc(p.x,p.y,11.2,0,6.28); ctx.fill();
         
         ctx.font = "750 12.2px sans-serif";
@@ -636,12 +605,8 @@ function draw() {
         if(i===mySlot && p.kickCharge>0){ ctx.strokeStyle="#ffff00"; ctx.lineWidth=3; ctx.beginPath(); ctx.arc(p.x,p.y,p.r+4,0,(Math.PI*2)*p.kickCharge); ctx.stroke(); }
     } 
 
-    // Ripristino del colore per il bordo dei testi
     ctx.strokeStyle = "#000000";
 
-    // 2. Disegno Interfaccia (UI) nella fascia in alto (Top Offset)
-    
-    // -- Punteggio (Centro alto) - Sans-serif, In Grassetto, Ridotto a 42px --
     ctx.fillStyle = "white";
     ctx.textAlign = "center";
     ctx.textBaseline = "alphabetic";
@@ -650,7 +615,6 @@ function draw() {
     ctx.strokeText(score[0] + " - " + score[1], MID_X, 55);
     ctx.fillText(score[0] + " - " + score[1], MID_X, 55);
 
-    // -- Timer (Centro, sotto il punteggio) - Sans-serif, Senza Grassetto, Ridotto a 20px --
     ctx.font = "20px sans-serif";
     ctx.lineWidth = 3.5;
     let mins = Math.floor(gameTime / 60).toString().padStart(2, '0');
@@ -660,7 +624,6 @@ function draw() {
 
     const myP = players[mySlot];
     if(myP && gameStarted){ 
-        // -- Testo Boost (In alto a sinistra) - Sans-serif, Senza Grassetto, Ridotto a 19px --
         ctx.textAlign = "left";
         ctx.font = "19px sans-serif";
         ctx.lineWidth = 3.5;
@@ -676,20 +639,18 @@ function draw() {
             ctx.fillText(txt, 30, 45); 
         }
 
-        // -- Barra Caricamento Tiro (Sotto il boost, in alto a sinistra) --
         if(myP.kickCharge > 0){ 
             const barX = 30, barY = 65, barW = 100, barH = 12;
             ctx.fillStyle = "#444"; 
-            ctx.fillRect(barX, barY, barW, barH); // Sfondo barra
+            ctx.fillRect(barX, barY, barW, barH); 
             ctx.fillStyle = "#ffff00"; 
-            ctx.fillRect(barX, barY, barW * myP.kickCharge, barH); // Riempimento
+            ctx.fillRect(barX, barY, barW * myP.kickCharge, barH); 
             ctx.strokeStyle = "#fff"; 
             ctx.lineWidth = 1.5;
-            ctx.strokeRect(barX, barY, barW, barH); // Bordo barra
+            ctx.strokeRect(barX, barY, barW, barH); 
         }
     } 
 
-    // 3. Disegno della Palla e Testo del GOAL
     ctx.fillStyle = "#FFF"; ctx.beginPath(); ctx.arc(ball.x, ball.y, ball.r, 0, 6.28); ctx.fill(); ctx.strokeStyle="#000"; ctx.lineWidth=2; ctx.stroke();
     
     if(goalMsg.timer > 0){ 
